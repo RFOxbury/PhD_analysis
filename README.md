@@ -1,2 +1,9 @@
-# PhD_analysis
-The code for statistical analysis for my PhD - sociophonetic analysis
+# PhD analysis
+This repository contains the code for the statistical analysis for my PhD.
+
+## adolescent_data_task.csv
+
+The columns are as follows:
+
+
+
