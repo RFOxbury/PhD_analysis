@@ -1,0 +1,215 @@
+---
+title: "Cleaning the adolescent data"
+author: "Rosie Oxbury"
+date: "January 2021"
+output:
+  html_notebook:
+    number_sections: yes
+    toc: yes
+    toc_depth: 3
+    toc_float: yes
+  pdf_document:
+    toc: yes
+    toc_depth: '3'
+---
+Load the packages we will need:
+```{r}
+library(tidyverse)
+```
+
+Load the adolescent data. Import "data_tampered/adolescent_data_task.csv" because this has task manually coded in Numbers.
+```{r}
+adolescent_data <- read_csv("data_cleaned/adolescent_data_task.csv")
+```
+# Clean the data
+
+We will get rid of the columns we do not need.
+```{r}
+colnames(adolescent_data)
+
+cols_to_keep <- c(
+  "participant",
+  "vowel",
+  "sound_start",
+  "sound_end",
+  "task",
+  "word",
+  "utterance",
+  "F1_20",
+  "F1_35",
+  "F1_50",
+  "F1_65",
+  "F1_80",
+  "F2_20",
+  "F2_35",
+  "F2_50",
+  "F2_65",
+  "F2_80",
+  "fol.phonOLOG.seg",
+  "fol.PHONETIC.seg",
+  "prec.phonOLOG.seg",
+  "prec.PHONETIC.seg",
+  "normF1_20",
+  "normF1_35",
+  "normF1_50",
+  "normF1_65",
+  "normF1_80",
+  "normF2_20",
+  "normF2_35",
+  "normF2_50",
+  "normF2_65",
+  "normF2_80",
+  "duration",
+  "changeF1",
+  "normChangeF1",
+  "changeF2",
+  "normChangeF2",
+  "TrajLength",
+  "norm_TL",
+  "sex",
+  "age",
+  "roland.rolling",
+  "tauto.l",
+  "breaking.word",
+  "prec.seg",
+  "syl.type"
+)
+
+adolescent_data2 <- adolescent_data %>% select(cols_to_keep)
+
+head(adolescent_data2)
+```
+Check the structure of the remaining variables and convert them to the correct format.
+
+```{r}
+str(adolescent_data2)
+
+adolescent_data3 <- adolescent_data2 %>% mutate(
+  participant = as.factor(participant),
+  vowel = as.factor(vowel),
+  #sound_start,
+  #sound_end,
+  task = as.factor(task),
+  word = as.factor(word),
+  #utterance,
+  fol.phonOLOG.seg,
+  fol.PHONETIC.seg,
+  prec.phonOLOG.seg,
+  prec.PHONETIC.seg,
+  sex = as.factor(sex),
+  age = as.factor(age),
+  roland.rolling = as.factor(roland.rolling),
+  tauto.l = as.factor(tauto.l),
+  breaking.word = as.factor(breaking.word),
+  prec.seg = as.factor(prec.seg),
+  syl.type = as.factor(syl.type)
+)
+```
+
+
+
+# Create the outcode, ethnicity and CofP variables
+These are social factors [explain]
+## Outcode variable
+Create vectors to specify which participants should go in which outcodes:
+```{r}
+outcode1 <- c("Jessica", "Chris", "Shantel", "Chantelle", "SD", "GW", "Daniel", "Moses", "Matisse", "Amanda", "Lola", "Khadir", "ZR")
+outcode2 <- c("Tariq", "Sami", "Joe", "Lucy", "CB", "Ali", "Ibrahim", "Omar")
+outcode3 <- c("Kai", "Denzel", "Tony")
+```
+** NB ** no need to create interaction between sex and outcode because all girls bar one are in outcode1. So Lucy, who lives in outcode 2, will be accounted for in the random effects structure.
+
+Create the variable for outcode:
+```{r}
+adolescent_data3 <- adolescent_data3 %>% 
+  mutate(outcode = ifelse(participant %in% outcode1,
+                "1",
+                ifelse(participant %in% outcode2,
+                       "2",
+                       ifelse(participant %in% outcode3, "3", "other"))))
+```
+
+There shouldn't be any participants with outcode listed as "other". Let's check:
+```{r}
+table(adolescent_data3$outcode)
+```
+## CofP variable
+```{r}
+youthclub <- c("Ali",
+               "Amanda",
+               "CB",
+               "Chantelle",
+               "Chris",
+               "Ibrahim",
+               "Jessica",
+               "Joe",
+               "Khadir",
+               "Lola",
+               "Lucy",
+               "Omar",
+               "Sami",
+               "Shantel",
+               "Tariq",
+               "ZR")
+studio <- c("Daniel", "Denzel",    "GW", "Kai", "Matisse",   "Moses", "SD", "Tony")
+```
+Create the variable:
+```{r}
+adolescent_data3 <- adolescent_data3 %>% 
+  mutate(CofP = ifelse(participant %in% youthclub,
+                "youthclub",
+                ifelse(participant %in% studio,
+                       "studio", "other")))
+```
+Check:
+```{r}
+table(adolescent_data3$CofP)
+```
+
+## Sex variable
+
+Create sex variable:
+```{r}
+adolescent_data3$participant <- as.factor(adolescent_data3$participant)
+levels(adolescent_data3$participant)
+```
+```{r}
+ad_f <- c("Amanda","Chantelle", "Chris","Jessica",
+          "Lola",      "Lucy","Shantel")
+```
+
+Create the variable:
+```{r}
+adolescent_data3 <- adolescent_data3 %>% mutate(
+  sex = ifelse(participant %in% ad_f, "F", "M")
+)
+
+adolescent_data3$sex <- as.factor(adolescent_data3$sex)
+
+table(adolescent_data3$sex)
+```
+
+# Create subsets for the different vowels
+
+```{r}
+levels(adolescent_data3$vowel)
+```
+
+
+```{r}
+face <- adolescent_data3 %>% filter(vowel == "face")
+
+price <- adolescent_data3 %>% filter(vowel == "price")
+
+goat <- adolescent_data3 %>% filter(vowel == "goat")
+```
+
+Write these to csv:
+```{r}
+face %>% write_csv("data_separated/face_ad.csv")
+
+price %>% write_csv("data_separated/price_ad.csv")
+
+goat %>% write_csv("data_separated/goat_ad.csv")
+```
+
