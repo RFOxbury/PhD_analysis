@@ -1,5 +1,5 @@
 ---
-title: "PRICE: adolescents and children!!"
+title: "Variation in the FACE vowel in the adolescent data"
 author: "Rosie Oxbury"
 date: "April 2020"
 output:
@@ -12,7 +12,7 @@ output:
     toc: yes
     toc_depth: '3'
 ---
-Load packages:
+Load the packages we will need:
 ```{r}
 library(tidyverse)
 library(brms)
@@ -25,362 +25,10 @@ library(tidybayes)
 ```
 
 
-Load the adolescent data. Import "data_tampered/adolescent_data_task.csv" because this has task manually coded in Numbers.
+Load the adolescent FACE data. Import "data_separated/face_ad.csv"
 ```{r}
-adolescents <- read_csv("data_tampered/adolescent_data_task.csv")
-children <- read_csv("data_tampered/child_data_task.csv")
+face_ad <- read_csv("data_separated/face_ad.csv")
 ```
-# Deal with adolescent data
-Convert the character variables (currently "character") to factor:
-```{r}
-adolescents2 <- adolescents %>% mutate(
-  participant = as.factor(participant),
-  vowel = as.factor(vowel),
-  task = as.factor(task),
-  word = as.factor(word),
-  #utterance = col_character(),
-  #praat_filename = col_character(),
-  X16 = NULL,
-  #fol.word = col_character(),
-  #utterance.elan = col_character(),
-  #word.elan = col_character(),
-  #vowel.elan = col_character(),
-  #fol.phonOLOG.seg = col_character(),
-  #fol.PHONETIC.seg = col_character(),
-  #prec.phonOLOG.seg = col_character(),
-  #prec.PHONETIC.seg = col_character(),
-  #elan_filename = col_character(),
-  #participant.elan = col_character(),
-  sex = as.factor(sex),
-  age = as.factor(age),
-  #roland.rolling = col_character()
-  #tauto.l
-  #breaking.word
-  prec.seg = as.factor(prec.seg),
-  syl.type = as.factor(syl.type)
-)
-
-
-```
-
-```{r}
-table(adolescents2$prec.seg)
-```
-```{r}
-table(adolescents2$syl.type)
-```
-
-
-## Create outcode, ethnicity and CofP variables
-### Outcode variable
-```{r}
-outcode1 <- c("Jessica", "Chris", "Shantel", "Chantelle", "SD", "GW", "Daniel", "Moses", "Matisse", "Amanda", "Lola", "Khadir", "ZR")
-outcode2 <- c("Tariq", "Sami", "Joe", "Lucy", "CB", "Ali", "Ibrahim", "Omar")
-outcode3 <- c("Kai", "Denzel", "Tony")
-```
-** NB ** no need to create interaction between sex and outcode because all girls bar one are in outcode1. So Lucy, who lives in outcode 2, will be accounted for in the random effects structure.
-Create the variable for outcode:
-```{r}
-adolescents2 <- adolescents2 %>% 
-  mutate(outcode = ifelse(participant %in% outcode1,
-                "1",
-                ifelse(participant %in% outcode2,
-                       "2",
-                       ifelse(participant %in% outcode3, "3", "other"))))
-```
-
-```{r}
-table(adolescents2$outcode)
-```
-## CofP variable
-```{r}
-youthclub <- c("Ali",
-               "Amanda",
-               "CB",
-               "Chantelle",
-               "Chris",
-               "Ibrahim",
-               "Jessica",
-               "Joe",
-               "Khadir",
-               "Lola",
-               "Lucy",
-               "Omar",
-               "Sami",
-               "Shantel",
-               "Tariq",
-               "ZR")
-studio <- c("Daniel", "Denzel",    "GW", "Kai", "Matisse",   "Moses", "SD", "Tony")
-```
-Create the variable:
-```{r}
-adolescents2 <- adolescents2 %>% 
-  mutate(CofP = ifelse(participant %in% youthclub,
-                "youthclub",
-                ifelse(participant %in% studio,
-                       "studio", "other")))
-```
-Check:
-```{r}
-table(adolescents2$CofP)
-```
-
-
-## Ethnolinguistic variable
-```{r}
-somali <- c("Ali", "Amanda", "Ibrahim", "Khadir", "Lola", "Tariq")
-arab <- c("Joe", "Sami", "ZR", "Omar")
-```
-Create the variable:
-```{r}
-adolescents2 <- adolescents2 %>% mutate(
-  ethnoling = ifelse(
-    participant %in% somali, "somali",
-    ifelse(participant %in% arab, "arab", "other")))
-```
-Check that it worked:
-```{r}
-table(adolescents2$ethnoling)
-```
-
-# Deal with the child data
-Convert the character variables (currently "character") to factor:
-```{r}
-children2 <- children %>% mutate(
-  participant = as.factor(participant),
-  vowel = as.factor(vowel),
-  word = as.factor(word),
-  keyword = as.factor(keyword),
-  Addressee = as.factor(Addressee),
-  X16 = NULL,
-  X33 = NULL,
-  sex = NULL,
-  age = as.factor(age),
-  roland.rolling = as.factor(roland.rolling),
-  tauto.l = as.factor(tauto.l),
-  breaking.word = as.factor(breaking.word),
-  prec.seg = as.factor(prec.seg),
-  syl.type = as.factor(syl.type)
-)
-```
-
-# Create social factor variables: sibling order, school year, sex
-Sex:
-```{r}
-children2 <- children2 %>% mutate(
-  sex = ifelse(participant %in% c("F1",
-                                  "F3",
-                                  "F4",
-                                  "F7",
-                                  "F8",
-                                  "F9",
-                                  "F10"), "F", "M"))
-
-table(children2$sex)
-```
-
-Not doing the school year variable, because we're going to lump Y1 and Y2 together for this bit of the analysis.
-
-# Merge the dataframes
-```{r}
-colnames(adolescents2)
-colnames(children2)
-```
-
-```{r}
-adolescents3 <- adolescents2 %>% mutate(
-  #"participant",
-             #"vowel",  
-             #"sound_start",
-             #"sound_end",
-             #"task",
-             #"word",
-             #"utterance",
-             #"F1_20",
-             #"F1_35",
-             #"F1_50",
-             #"F1_65",
-             #"F1_80",
-             #"F2_20",
-             #"F2_35",
-             #"F2_50",
-             #"F2_65",
-             #"F2_80",
-             "praat_filename" = NULL,
-             #"fol.phonOLOG.seg",
-             #"fol.PHONETIC.seg",
-             #"prec.phonOLOG.seg",
-             #"prec.PHONETIC.seg",
-             #"lex.stress",     
-             #"elan_filename", 
-             "meanF1" = NULL,
-             "meanF2" = NULL,   
-             "meanFleeceF1" = NULL,     
-             "meanFleeceF2" = NULL,
-             "meanTRAPF1" = NULL,
-             "u_F1" = NULL,
-             "u_F2" = NULL,
-             "trapF2" = NULL, 
-             "S_F1" = NULL,
-             "S_F2" = NULL,          
-             #"normF1_20"         "normF1_35"         "normF1_50"         "normF1_65"         "normF1_80"         "normF2_20"         "normF2_35" 
-             #"normF2_50"         "normF2_65"         "normF2_80"         "duration"          "changeF1"          "normChangeF1"      "changeF2"
-             #"normChangeF2"      "VL"                "normVL"            "normVSL1"          "normVSL2"          "normVSL3"          "normVSL4"      
-             "VSL1" = NULL,
-             "VSL2" = NULL,
-             "VSL3" = NULL,
-             "VSL4" = NULL,
-             #"TrajLength",      "norm_TL"
-             "sex" = NULL,              
-             "age" = NULL
-             #"roland.rolling"    "tauto.l"           "breaking.word"     "prec.seg"          "syl.type"          "outcode"          "CofP"              "ethnoling"
-)
-```
-Do the same with the child data
-```{r}
-children3 <- children2 %>% mutate(
-  #"participant",
-             #"vowel",  
-             #"sound_start",
-             #"sound_end",
-             #"task",
-             #"word",
-             #"utterance",
-             #"F1_20",
-             #"F1_35",
-             #"F1_50",
-             #"F1_65",
-             #"F1_80",
-             #"F2_20",
-             #"F2_35",
-             #"F2_50",
-             #"F2_65",
-             #"F2_80",
-             "praat_filename" = NULL,
-             #"fol.phonOLOG.seg",
-             #"fol.PHONETIC.seg",
-             #"prec.phonOLOG.seg",
-             #"prec.PHONETIC.seg",
-             #"lex.stress",     
-             #"elan_filename", 
-             "meanF1" = NULL,
-             "meanF2" = NULL,   
-             "meanFleeceF1" = NULL,     
-             "meanFleeceF2" = NULL,
-             "meanTRAPF1" = NULL,
-             "u_F1" = NULL,
-             "u_F2" = NULL,
-             "trapF2" = NULL, 
-             "S_F1" = NULL,
-             "S_F2" = NULL,          
-             #"normF1_20"         "normF1_35"         "normF1_50"         "normF1_65"         "normF1_80"         "normF2_20"         "normF2_35" 
-             #"normF2_50"         "normF2_65"         "normF2_80"         "duration"          "changeF1"          "normChangeF1"      "changeF2"
-             #"normChangeF2"      "VL"                "normVL"            "normVSL1"          "normVSL2"          "normVSL3"          "normVSL4"      
-             "VSL1" = NULL,
-             "VSL2" = NULL,
-             "VSL3" = NULL,
-             "VSL4" = NULL,
-             #"TrajLength",      "norm_TL"
-             "sex" = NULL,              
-             "age" = NULL
-             #"roland.rolling"    "tauto.l"           "breaking.word"     "prec.seg"          "syl.type"          "outcode"          "CofP"              "ethnoling"
-)
-```
-
-```{r}
-children4 <- children3 %>% select(
-  participant, vowel, sound_start, sound_end, word, keyword, utterance, Addressee, "F1_20",
-  "F1_35",             "F1_50",             "F1_65",             "F1_80",            
-  "F2_20",             "F2_35",             "F2_50",             "F2_65",             "F2_80",
-  "fol.phonOLOG.seg",  "fol.PHONETIC.seg",  "prec.phonOLOG.seg",
-  "prec.PHONETIC.seg",
-  "normF1_20",         "normF1_35",        "normF1_50",      "normF1_65",         "normF1_80",        "normF2_20",         "normF2_35", 
-  "normF2_50",         "normF2_65",         "normF2_80",        "duration",          "changeF1",          "normChangeF1",      "changeF2",    
-  "normChangeF2", "TrajLength",        "norm_TL",           "roland.rolling",   
-  "tauto.l",           "breaking.word",     "prec.seg",          "syl.type"
-)
-#colnames(children3)
-```
-Refine the adolescent data as well
-```{r}
-adolescents4 <- adolescents3 %>% select(
-  "participant",       "vowel",             "sound_start",       "sound_end",         "task",              "word",             "utterance",
-  "F1_20",             "F1_35",             "F1_50",             "F1_65",             "F1_80",             "F2_20",             "F2_35",
-  "F2_50",             "F2_65",             "F2_80",  
-  "fol.phonOLOG.seg",  "fol.PHONETIC.seg",  "prec.phonOLOG.seg", "prec.PHONETIC.seg",
-  "normF1_20",         "normF1_35",         "normF1_50",         "normF1_65",
-  "normF1_80",         "normF2_20",         "normF2_35",         "normF2_50",         "normF2_65",         "normF2_80",         "duration",        
-  "changeF1",         "normChangeF1",     "changeF2",          "normChangeF2", "TrajLength",        "norm_TL",           "roland.rolling",    "tauto.l",
-  "breaking.word",     "prec.seg",          "syl.type",         "outcode",           "CofP",             "ethnoling" 
-)
-
-#colnames(adolescents4)
-```
-The child data has these variables that the adolescent data doesn't:
-
-- keyword
-
-- Addressee
-
-And the adolescent data has these variables:
-
-- task
-
-- outcode
-
-- CofP
-
-- ethnoling
-
-Make these variables in the relevant dataframes:
-```{r}
-children4$task <- NA
-children4$outcode <- NA
-children4$CofP <- NA
-children4$ethnoling <- NA
-children4$age <- "child"
-
-adolescents4$keyword <- NA
-adolescents4$Addressee <- NA
-adolescents4$age <- "adolescent"
-```
-
-Define the column order:
-```{r}
-col_order <- c(
-  "participant",       "vowel",             "sound_start",       "sound_end",             "word",             "utterance",
-  "F1_20",             "F1_35",             "F1_50",             "F1_65",             "F1_80",             "F2_20",             "F2_35",
-  "F2_50",             "F2_65",             "F2_80",  
-  "fol.phonOLOG.seg",  "fol.PHONETIC.seg",  "prec.phonOLOG.seg", "prec.PHONETIC.seg",
-  "normF1_20",         "normF1_35",         "normF1_50",         "normF1_65",
-  "normF1_80",         "normF2_20",         "normF2_35",         "normF2_50",         "normF2_65",         "normF2_80",         "duration",        
-  "changeF1",         "normChangeF1",     "changeF2",          "normChangeF2", "TrajLength",        "norm_TL",           "roland.rolling",    "tauto.l",
-  "breaking.word",     "prec.seg",          "syl.type","task", "keyword", "Addressee",        "outcode",           "CofP",             "ethnoling", "age"
-)
-```
-Apply this:
-```{r}
-children5 <- children4[, col_order]
-adolescents5 <- adolescents4[, col_order]
-```
-
-Rbind the dataframes
-```{r}
-all_dat <- rbind(children5, adolescents5)
-```
-
-
-# Subset FACE
-
-```{r}
-levels(all_dat$vowel)
-```
-
-Subset FACE:
-```{r}
-face <- all_dat %>% filter(vowel=="face")
-```
-
 
 # EDA
 Checklist:
@@ -401,68 +49,70 @@ Checklist:
 
 Check for NAs first
 ```{r}
-which(is.na(face$normF1_20))
-which(is.na(face$normF1_35))
-which(is.na(face$normF1_50))
-which(is.na(face$normF1_65))
-which(is.na(face$normF1_80))
+norm_formants <- c("normF1_20",
+                   "normF1_35",
+                   "normF1_50",
+                   "normF1_65",
+                   "normF1_80",
+                   "normF2_20",
+                   "normF2_35",
+                   "normF2_50",
+                   "normF2_65",
+                   "normF2_80"
+                   )
 
-which(is.na(face$normF2_20))
-which(is.na(face$normF2_35))
-which(is.na(face$normF2_50))
-which(is.na(face$normF2_65))
-which(is.na(face$normF2_80))
+face_ad %>% filter_at(vars(norm_formants), any_vars(is.na(.)))
 ```
 
-Good stuff.
+No NAs -- good.
 
 Outliers
 
 ```{r}
-ggplot(face, aes(x=normF1_20))+geom_histogram(bins=100)+theme_minimal() + 
-  geom_vline(xintercept=mean(face$normF1_20)+3*sd(face$normF1_20)) + 
-  geom_vline(xintercept=mean(face$normF1_20)-3*sd(face$normF1_20))
+ggplot(face_ad, aes(x=normF1_20))+geom_histogram(bins=100)+theme_minimal() + 
+  geom_vline(xintercept=mean(face_ad$normF1_20)+3*sd(face_ad$normF1_20)) + 
+  geom_vline(xintercept=mean(face_ad$normF1_20)-3*sd(face_ad$normF1_20))
 
-ggplot(face, aes(x=normF1_35))+geom_histogram(bins=100)+theme_minimal() + 
-  geom_vline(xintercept=mean(face$normF1_35)+3*sd(face$normF1_35)) + 
-  geom_vline(xintercept=mean(face$normF1_35)-3*sd(face$normF1_35))
+ggplot(face_ad, aes(x=normF1_35))+geom_histogram(bins=100)+theme_minimal() + 
+  geom_vline(xintercept=mean(face_ad$normF1_35)+3*sd(face_ad$normF1_35)) + 
+  geom_vline(xintercept=mean(face_ad$normF1_35)-3*sd(face_ad$normF1_35))
 
-ggplot(face, aes(x=normF1_50))+geom_histogram(bins=100)+theme_minimal() +
-  geom_vline(xintercept=mean(face$normF1_50)+3*sd(face$normF1_50)) + 
-  geom_vline(xintercept=mean(face$normF1_50)-3*sd(face$normF1_50))
+ggplot(face_ad, aes(x=normF1_50))+geom_histogram(bins=100)+theme_minimal() +
+  geom_vline(xintercept=mean(face_ad$normF1_50)+3*sd(face_ad$normF1_50)) + 
+  geom_vline(xintercept=mean(face_ad$normF1_50)-3*sd(face_ad$normF1_50))
 
-ggplot(face, aes(x=normF1_65))+geom_histogram(bins=100)+theme_minimal() + 
-  geom_vline(xintercept=mean(face$normF1_65)+3*sd(face$normF1_65)) + 
-  geom_vline(xintercept=mean(face$normF1_65)-3*sd(face$normF1_65))
+ggplot(face_ad, aes(x=normF1_65))+geom_histogram(bins=100)+theme_minimal() + 
+  geom_vline(xintercept=mean(face_ad$normF1_65)+3*sd(face_ad$normF1_65)) + 
+  geom_vline(xintercept=mean(face_ad$normF1_65)-3*sd(face_ad$normF1_65))
 
-ggplot(face, aes(x=normF1_80))+geom_histogram(bins=100)+theme_minimal() + 
-  geom_vline(xintercept=mean(face$normF1_80)+3*sd(face$normF1_80)) + 
-  geom_vline(xintercept=mean(face$normF1_80)-3*sd(face$normF1_80))
+ggplot(face_ad, aes(x=normF1_80))+geom_histogram(bins=100)+theme_minimal() + 
+  geom_vline(xintercept=mean(face_ad$normF1_80)+3*sd(face_ad$normF1_80)) + 
+  geom_vline(xintercept=mean(face_ad$normF1_80)-3*sd(face_ad$normF1_80))
 
 # F2
-ggplot(face, aes(x=normF2_20))+geom_histogram(bins=100)+theme_minimal() + 
-  geom_vline(xintercept=mean(face$normF2_20)+3*sd(face$normF2_20)) + 
-  geom_vline(xintercept=mean(face$normF2_20)-3*sd(face$normF2_20))
+ggplot(face_ad, aes(x=normF2_20))+geom_histogram(bins=100)+theme_minimal() + 
+  geom_vline(xintercept=mean(face_ad$normF2_20)+3*sd(face_ad$normF2_20)) + 
+  geom_vline(xintercept=mean(face_ad$normF2_20)-3*sd(face_ad$normF2_20))
 
-ggplot(face, aes(x=normF2_35))+geom_histogram(bins=100)+theme_minimal() + 
-  geom_vline(xintercept=mean(face$normF2_35)+3*sd(face$normF2_35)) + 
-  geom_vline(xintercept=mean(face$normF2_35)-3*sd(face$normF2_35))
+ggplot(face_ad, aes(x=normF2_35))+geom_histogram(bins=100)+theme_minimal() + 
+  geom_vline(xintercept=mean(face_ad$normF2_35)+3*sd(face_ad$normF2_35)) + 
+  geom_vline(xintercept=mean(face_ad$normF2_35)-3*sd(face_ad$normF2_35))
 
-ggplot(face, aes(x=normF2_50))+geom_histogram(bins=100)+theme_minimal() +
-  geom_vline(xintercept=mean(face$normF2_50)+3*sd(face$normF2_50)) + 
-  geom_vline(xintercept=mean(face$normF2_50)-3*sd(face$normF2_50))
+ggplot(face_ad, aes(x=normF2_50))+geom_histogram(bins=100)+theme_minimal() +
+  geom_vline(xintercept=mean(face_ad$normF2_50)+3*sd(face_ad$normF2_50)) + 
+  geom_vline(xintercept=mean(face_ad$normF2_50)-3*sd(face_ad$normF2_50))
 
-ggplot(face, aes(x=normF2_65))+geom_histogram(bins=100)+theme_minimal() + 
-  geom_vline(xintercept=mean(face$normF2_65)+3*sd(face$normF2_65)) + 
-  geom_vline(xintercept=mean(face$normF2_65)-3*sd(face$normF2_65))
+ggplot(face_ad, aes(x=normF2_65))+geom_histogram(bins=100)+theme_minimal() + 
+  geom_vline(xintercept=mean(face_ad$normF2_65)+3*sd(face_ad$normF2_65)) + 
+  geom_vline(xintercept=mean(face_ad$normF2_65)-3*sd(face_ad$normF2_65))
 
-ggplot(face, aes(x=normF2_80))+geom_histogram(bins=100)+theme_minimal() + 
-  geom_vline(xintercept=mean(face$normF2_80)+3*sd(face$normF2_80)) + 
-  geom_vline(xintercept=mean(face$normF2_80)-3*sd(face$normF2_80))
+ggplot(face_ad, aes(x=normF2_80))+geom_histogram(bins=100)+theme_minimal() + 
+  geom_vline(xintercept=mean(face_ad$normF2_80)+3*sd(face_ad$normF2_80)) + 
+  geom_vline(xintercept=mean(face_ad$normF2_80)-3*sd(face_ad$normF2_80))
 ```
-
+There are a couple of obvious outliers in (a) normF1_50 and (b) normF1_80.
 ```{r}
-face2 <- face %>% filter(
+face2 <- face_ad %>% filter(
   normF1_50 < 2,
   normF1_80 < 2
 )
@@ -471,7 +121,7 @@ face2 <- face %>% filter(
 ### relevel following segment
 
 ```{r}
-table(face2$age, face2$syl.type)
+table(face2$syl.type)
 ```
 ```{r}
 face2 %>% filter(syl.type=="either") %>% group_by(word) %>% summarise(unicorn=n()) %>% arrange(desc(unicorn))
@@ -488,14 +138,12 @@ face2 <- face2 %>% mutate(
         ifelse(syl.type=="medial.open", "medial.open",
                ifelse(syl.type=="either" & word=="OKAY", "final.open",
                       ifelse(
-                        syl.type=="either" & word=="PLAYTIME", "medial.open", ifelse(
-                          syl.type=="either" & word=="DAYLIGHT", "medial.open", "other"
+                        syl.type=="either" & word=="DAYLIGHT", "medial.open", "other"
                         )
                       )))
       )
     )
   )
-)
 ```
 
 Check how this worked:
@@ -504,14 +152,9 @@ table(face2$syl.type)
 table(face2$syl.type2)
 ```
 
-Filter out "other"
-```{r}
-face3 <- face2 %>% filter(syl.type2 != "other")
-```
-
 Find out what the relevant coda segments are:
 ```{r}
-closed_face <- face3 %>% filter(syl.type2=="closed")
+closed_face <- face2 %>% filter(syl.type2=="closed")
 
 closed_face$fol.phonOLOG.seg <- as.factor(closed_face$fol.phonOLOG.seg)
 
@@ -528,7 +171,7 @@ other <- c("?")
 
 Create the variable:
 ```{r}
-face4 <- face3 %>% mutate(
+face3 <- face2 %>% mutate(
   following = ifelse(
     syl.type2 =="coda.nasal", "coda.nasal",
     ifelse(
@@ -554,17 +197,17 @@ face4 <- face3 %>% mutate(
 
 Check the output
 ```{r}
-table(face4$following)
+table(face3$following)
 ```
 Filter out "other":
 
 ```{r}
-face5 <- face4 %>% filter(following!="other")
+face4 <- face3 %>% filter(following!="other")
 ```
-Lush.
+Lovely.
 ### Relevel preceding segment
 ```{r}
-table(face5$age, face5$prec.seg)
+table(face4$prec.seg)
 ```
 
 I'll probably put other, vowel and zero together.
@@ -573,8 +216,8 @@ I'll probably put other, vowel and zero together.
 ### Check frequent words
 Check which words are most frequent
 ```{r}
-face5 %>% 
-  group_by(age, word) %>% 
+face4 %>% 
+  group_by(word) %>% 
   summarise(number = n()) %>% 
   arrange(desc(number))
 ```
@@ -583,91 +226,53 @@ Leaving all these as they are for now.
 
 Check distribution:
 ```{r}
-ggplot(face5, aes(x=duration))+geom_histogram(bins=100)+theme_minimal()
+ggplot(face4, aes(x=duration))+geom_histogram(bins=100)+theme_minimal()
 ```
-Remove outliers:
-```{r}
-face6 <- face5 %>% filter(
-  duration < 0.65
-)
-```
-
 
 Taking the natural log, cos that's what other studies do and say is standard.
 ```{r}
-face6 <- face6 %>% mutate(
+face4 <- face4 %>% mutate(
   LogDur = log(duration)
 )
 ```
 
 Check that it worked:
 ```{r}
-ggplot(face6, aes(x=duration))+geom_histogram(bins=100)+theme_minimal()
-ggplot(face6, aes(x=LogDur))+geom_histogram(bins=100)+theme_minimal()
+ggplot(face4, aes(x=duration))+geom_histogram(bins=100)+theme_minimal()
+ggplot(face4, aes(x=LogDur))+geom_histogram(bins=100)+theme_minimal()
 ```
 Great.
 
-# FACE: adolescents: F1
-Create subsets:
-```{r}
-face_ad <- face6 %>% filter(age=="adolescent")
-face_ch <- face6 %>% filter(age=="child")
-```
-
-Write csv:
-```{r}
-#face_ch %>% write_csv("data_separated/face_ch.csv")
-face6 %>% write_csv("data_separated/face_adch.csv")
-```
-
+# Analysis: FACE: adolescents: F1
 
 ## Initial model - comparing CofPs
 
-Create sex variable:
-```{r}
-face_ad$participant <- factor(face_ad$participant)
-levels(face_ad$participant)
-```
-```{r}
-ad_f <- c("Amanda","Chantelle", "Chris","Jessica",
-          "Lola",      "Lucy","Shantel")
-```
-
-Create the variable:
-```{r}
-face_ad <- face_ad %>% mutate(
-  sex = ifelse(participant %in% ad_f, "F", "M")
-)
-
-face_ad$sex <- as.factor(face_ad$sex)
-```
-
-
 ### EDA
 Check whether F1 is different by outcode, sex, CofP, ethnicity, and also by following seg, preceding seg.
+
+Questions to address:
+
+- Does it look like preceding environment has an effect on F1?
+
+- Does it look like following environment has an effect on F1?
+
 ```{r}
-ggplot(face_ad, aes(x=following, y=normF1_20, fill=sex)) + geom_boxplot() +
+ggplot(face4, aes(x=following, y=normF1_20, fill=sex)) + geom_boxplot() +
   theme_minimal() + scale_y_reverse()
 
-ggplot(face_ad, aes(x=following, y=normF1_20)) + geom_boxplot() +
-  theme_minimal() + facet_wrap(~ethnoling) + scale_y_reverse()
-
-ggplot(face_ad, aes(x=following, y=normF1_20)) + geom_boxplot() +
+ggplot(face4, aes(x=following, y=normF1_20)) + geom_boxplot() +
   theme_minimal() + facet_wrap(~outcode) + scale_y_reverse()
 
-ggplot(face_ad, aes(x=following, y=normF1_20, fill=CofP)) + geom_boxplot() +
+ggplot(face4, aes(x=following, y=normF1_20, fill=CofP)) + geom_boxplot() +
   theme_minimal() + scale_y_reverse()
 
-ggplot(face_ad, aes(x=prec.seg, y=normF1_20, fill=sex)) + geom_boxplot() +
+ggplot(face4, aes(x=prec.seg, y=normF1_20, fill=sex)) + geom_boxplot() +
   theme_minimal() + scale_y_reverse()
 
-ggplot(face_ad, aes(x=prec.seg, y=normF1_20)) + geom_boxplot() +
-  theme_minimal() + facet_wrap(~ethnoling) + scale_y_reverse()
-
-ggplot(face_ad, aes(x=prec.seg, y=normF1_20)) + geom_boxplot() +
+ggplot(face4, aes(x=prec.seg, y=normF1_20)) + geom_boxplot() +
   theme_minimal() + facet_wrap(~outcode) + scale_y_reverse()
 
-ggplot(face_ad, aes(x=prec.seg, y=normF1_20, fill=CofP)) + geom_boxplot() +
+ggplot(face4, aes(x=prec.seg, y=normF1_20, fill=CofP)) + geom_boxplot() +
   theme_minimal() + scale_y_reverse()
 ```
 Kind of looks like there's no interesting variation!
@@ -685,51 +290,51 @@ We need to:
 
 #### Task
 ```{r}
-table(face_ad$task)
+table(face4$task)
 ```
 Lump reading and wordlist together:
 ```{r}
-face_ad$task <- as.factor(face_ad$task)
-levels(face_ad$task) <- c("interview", "read.speech", "read.speech")
+face4$task <- as.factor(face4$task)
+levels(face4$task) <- c("interview", "read.speech", "read.speech")
 ```
 
 
 #### sum-code factors
 
-The factors are: task, sex, ethnoling, CofP, outcode, following seg, prec.seg
+The factors are: task, sex, CofP, outcode, following seg, prec.seg
 
 Dummy-code task and set reference to interview. This is because more than a thousand tokens are interview, and only 72 are reading!
 ```{r}
-table(face_ad$task)
-face_ad$task <- as.factor(face_ad$task)
-face_ad$task <- relevel(face_ad$task, ref="interview")
-table(face_ad$task)
+table(face4$task)
+face4$task <- as.factor(face4$task)
+face4$task <- relevel(face4$task, ref="interview")
+table(face4$task)
 ```
 
 Sex:
 ```{r}
-table(face_ad$sex)
-face_ad$sex <- as.factor(face_ad$sex)
-contrasts(face_ad$sex) <- contr.sum(2)
-contrasts(face_ad$sex)
+table(face4$sex)
+face4$sex <- as.factor(face4$sex)
+contrasts(face4$sex) <- contr.sum(2)
+contrasts(face4$sex)
 ```
 CofP:
 ```{r}
-table(face_ad$CofP)
-face_ad$CofP <- as.factor(face_ad$CofP)
-contrasts(face_ad$CofP) <- contr.sum(2)
-contrasts(face_ad$CofP)
+table(face4$CofP)
+face4$CofP <- as.factor(face4$CofP)
+contrasts(face4$CofP) <- contr.sum(2)
+contrasts(face4$CofP)
 ```
 Prec.seg:
 ```{r}
-table(face_ad$prec.seg)
-face_ad$prec.seg <- as.factor(face_ad$prec.seg)
+table(face4$prec.seg)
+face4$prec.seg <- as.factor(face4$prec.seg)
 #contrasts(goat_ad$prec.seg) <- contr.sum(8)
 #contrasts(goat_ad$prec.seg)
 ```
 Relevel:
 ```{r}
-levels(face_ad$prec.seg) <- c("approx.glide",
+levels(face4$prec.seg) <- c("approx.glide",
                               "coronal",
                               "labial",
                               "nasal",
@@ -740,35 +345,45 @@ levels(face_ad$prec.seg) <- c("approx.glide",
 ```
 Carry on with prec.seg:
 ```{r}
-table(face_ad$prec.seg)
+table(face4$prec.seg)
 #face_ad$prec.seg <- as.factor(face_ad$prec.seg)
-contrasts(face_ad$prec.seg) <- contr.sum(6)
-contrasts(face_ad$prec.seg)
+contrasts(face4$prec.seg) <- contr.sum(6)
+contrasts(face4$prec.seg)
 ```
+
+Frequent words in each category
+```{r}
+face4 %>% filter(prec.seg=="coronal") %>% group_by(word) %>% summarise(tokens = n()) %>% arrange(desc(tokens))
+face4 %>% filter(prec.seg=="nasal") %>% group_by(word) %>% summarise(tokens = n()) %>% arrange(desc(tokens))
+face4 %>% filter(prec.seg=="velar") %>% group_by(word) %>% summarise(tokens = n()) %>% arrange(desc(tokens))
+face4 %>% filter(prec.seg=="approx.glide") %>% group_by(word) %>% summarise(tokens = n()) %>% arrange(desc(tokens))
+```
+
+
 
 Following seg:
 
 ```{r}
-table(face_ad$following)
-face_ad$following <- as.factor(face_ad$following)
-contrasts(face_ad$following) <- contr.sum(5)
-contrasts(face_ad$following)
+table(face4$following)
+face4$following <- as.factor(face4$following)
+contrasts(face4$following) <- contr.sum(5)
+contrasts(face4$following)
 ```
 
 ```{r}
-str(face_ad)
+str(face4)
 ```
 
 ```{r}
-table(face_ad$CofP)
-table(face_ad$sex)
-table(face_ad$outcode)
-table(face_ad$prec.seg)
-table(face_ad$following)
+table(face4$CofP)
+table(face4$sex)
+table(face4$outcode)
+table(face4$prec.seg)
+table(face4$following)
 ```
 
 ```{r}
-(tab <- face_ad %>% 
+(tab <- face4 %>% 
   group_by(CofP, sex, outcode, prec.seg) %>% 
   summarise(counts = n()) %>% 
   arrange(desc(counts)) %>% 
@@ -776,7 +391,7 @@ table(face_ad$following)
    #mutate(Total = coda.nasal+final.open+medial.open+voiced+voiceless)) #%>% 
   #write_csv("phon_environment/children_face_following.csv"))
 
-(totals <- face_ad %>% 
+(totals <- face4 %>% 
   group_by(prec.seg) %>% 
   summarise(counts = n()) %>% 
   arrange(desc(counts)) %>% 
@@ -788,7 +403,7 @@ rbind(tab,totals) %>%
   write_csv("phon_environment/adolescents_face_precseg.csv")
 ```
 ```{r}
-(tab <- face_ad %>% 
+(tab <- face4 %>% 
   group_by(CofP, sex, outcode, following) %>% 
   summarise(counts = n()) %>% 
   arrange(desc(counts)) %>% 
@@ -796,7 +411,7 @@ rbind(tab,totals) %>%
    #mutate(Total = coda.nasal+final.open+medial.open+voiced+voiceless)) #%>% 
   #write_csv("phon_environment/children_face_following.csv"))
 
-(totals <- face_ad %>% 
+(totals <- face4 %>% 
   group_by(following) %>% 
   summarise(counts = n()) %>% 
   arrange(desc(counts)) %>% 
@@ -808,12 +423,21 @@ rbind(tab,totals) %>%
   write_csv("phon_environment/adolescents_face_following.csv")
 ```
 
+Frequent words in each category
+```{r}
+face4 %>% filter(following=="coda.nasal") %>% group_by(word) %>% summarise(tokens = n()) %>% arrange(desc(tokens))
+face4 %>% filter(following=="medial.open") %>% group_by(word) %>% summarise(tokens = n()) %>% arrange(desc(tokens))
+face4 %>% filter(following=="voiced") %>% group_by(word) %>% summarise(tokens = n()) %>% arrange(desc(tokens))
+face4 %>% filter(following=="voiceless") %>% group_by(word) %>% summarise(tokens = n()) %>% arrange(desc(tokens))
+face4 %>% filter(following=="final.open") %>% group_by(word) %>% summarise(tokens = n()) %>% arrange(desc(tokens))
+```
+
 #### set priors
 Get range of the dependent variable:
 ```{r}
-summary(face_ad$normF1_20)
-max(face_ad$normF1_20)-min(face_ad$normF1_20)
-sd(face_ad$normF1_20)
+summary(face4$normF1_20)
+max(face4$normF1_20)-min(face4$normF1_20)
+sd(face4$normF1_20)
 ```
 
 ```{r}
@@ -833,64 +457,94 @@ my_priors3 <- c(
 
 #### Check for outliers
 ```{r}
-ggplot(face_ad, aes(x=normF1_20))+geom_histogram(bins=100) +theme_minimal()
+ggplot(face4, aes(x=normF1_20))+geom_histogram(bins=100) +theme_minimal()
 ```
 There are some tails - try to filter these out
 ```{r}
-face_ad2 <- face_ad %>% filter(
+face5 <- face4 %>% filter(
   normF1_20 > 0.6,
   normF1_20 < 1.4
 )
 ```
 Plot again:
 ```{r}
-ggplot(face_ad2, aes(x=normF1_20))+geom_histogram(bins=100) +theme_minimal()
+ggplot(face5, aes(x=normF1_20))+geom_histogram(bins=100) +theme_minimal()
 ```
 
 ### z-score the continuous variables
+
 ```{r}
-face_ad2 <- face_ad2 %>% mutate(
-  LogDurZ = scale(LogDur, center = TRUE),
+face5 <- face5 %>% mutate(
+  normF1_20_c = normF1_20 - mean(normF1_20),
+  normF1_20_z = normF1_20_c / sd(normF1_20_c),
   normF1_20z = scale(normF1_20, center = TRUE)
 )
 ```
 
+Find what the mean is:
+```{r}
+mean(face5$normF1_20)
+```
+
+The standard deviation stays the same when you subtract the mean (the mean becomes 0, and all data points are the same distance from 0 as they were from the mean):
+```{r}
+sd(face5$normF1_20)
+sd(face5$normF1_20_c)
+```
+
+
+Check this:
+```{r}
+face5 %>% select(normF1_20, normF1_20_c, normF1_20_z, normF1_20z)
+```
+So a normF1_20 value of 0.93 is 0.52 standard deviations below the mean.
+
+Scale log(duration) as well:
+```{r}
+face5 <- face5 %>% mutate(
+  LogDur_c = LogDur - mean(LogDur),
+  LogDur_z = LogDur_c / sd(LogDur_c),
+  LogDurZ = scale(LogDur, center = TRUE)
+)
+```
+
+Check what the mean and standard deviation of log(dur) are:
+```{r}
+mean(face5$LogDur)
+sd(face5$LogDur)
+```
+Check the same way as before:
+```{r}
+face5 %>% select(duration, LogDur, LogDur_c, LogDur_z, LogDurZ)
+```
+
 Plot these to check it worked:
 ```{r}
-ggplot(face_ad2, aes(x=normF1_20))+geom_histogram()+theme_minimal()
-ggplot(face_ad2, aes(x=normF1_20z))+geom_histogram()+theme_minimal() + geom_vline(xintercept=2) + geom_vline(xintercept=-2)
+ggplot(face5, aes(x=normF1_20))+geom_histogram()+theme_minimal()
+ggplot(face5, aes(x=normF1_20z))+geom_histogram()+theme_minimal() + geom_vline(xintercept=2) + geom_vline(xintercept=-2)
+
+ggplot(face5, aes(x=LogDur))+geom_histogram()+theme_minimal()
+ggplot(face5, aes(x=LogDurZ))+geom_histogram()+theme_minimal() + geom_vline(xintercept=2) + geom_vline(xintercept=-2)
 ```
 Looks good.
 
 ### Run the model
 Initial model with just CofP
 ```{r}
-#price_ad_f2_m1a <- brm(normF2_20z ~ LogDurZ +
- #                      CofP +
-  #                       prec.seg +
-   #                        following +
-    #                   (1 + LogDurZ + prec.seg + following | participant) + 
-     #                (1+ CofP|word), data = price_ad2,
-      #               prior = my_priors3,
-       #              control = list(adapt_delta = 0.99),
-        #    cores=2,
-         #   file="models_new/price_ad_f2_m1a")
-
-#face_ad_f1_m1 <- brm(normF1_20z ~ LogDurZ +
+set.seed(56) #for reproducability
+#face_ad_f1_m1 <- brm(normF1_20z ~ LogDurZ +    #UNCOMMENT THESE LINES WHEN YOU NEED TO RUN THE MODEL
  #                      CofP*prec.seg +
   #                         CofP*following +
-   #                    (1 + LogDurZ + prec.seg + following | participant) + 
-    #                 (1+ CofP|word), data = face_ad2,
+   #                    (1 + prec.seg + following | participant) + 
+    #                 (1+ CofP|word), data = face5,
      #                prior = my_priors3,
       #               control = list(adapt_delta = 0.99),
-       #     cores=2,
-        #    sample_prior = TRUE,
-         #   file="models_new/face_ad_f1_m1")
+        #    file="models/face_ad_f1_m1")
 ```
 
 ### Load the model
 ```{r}
-face_ad_f1_m1 <- read_rds("models_new/face_ad_f1_m1.rds")
+face_ad_f1_m1 <- read_rds("models/face_ad_f1_m1.rds")
 ```
 
 
@@ -904,25 +558,7 @@ pp_check(face_ad_f1_m1)
 (face_ad_f1_sum <- parameters::model_parameters(face_ad_f1_m1, ci=0.95, ci_method="hdi", effects="fixed"))
 ```
 
-```{r}
-(face_ad_f1_sum <- face_ad_f1_sum %>% mutate(
-  Median = round(Median, 2),
-  CI_low = round(CI_low, 2),
-  CI_high = round(CI_high, 2),
-  pd = round(pd, 2),
-  ROPE_Percentage = round(ROPE_Percentage, 2)
-))
-```
-Write to csv:
-```{r}
-face_ad_f1_sum %>% write_csv("sumtabs_new/face_ad_f1_sum.csv")
-```
-
-
-
 ### Stanplot
-
-
 
 ```{r}
 my_labels <- c("Intercept",
@@ -982,13 +618,12 @@ face_ad_f1_m1 %>%
 ```
 
 ```{r}
-contrasts(face_ad2$prec.seg)
+contrasts(face5$prec.seg)
 ```
 
 ```{r}
 emmeans(face_ad_f1_m1, ~ prec.seg)
 ```
-0.17+0.12-0.16+0.71-0.04-0.33 =0.47
 
 
 Effect of preceding velar:
@@ -1031,7 +666,7 @@ face_ad_f1_m1 %>%
         strip.text=element_text(size=rel(1.1)))
 ```
 ```{r}
-contrasts(face_ad2$following)
+contrasts(face5$following)
 ```
 
 ```{r}
@@ -1082,7 +717,7 @@ face_ad_f1_m1 %>%
 #### Word
 Check which words were most frequent in the data:
 ```{r}
-(face_words <- face_ad2 %>% group_by(word) %>% summarise(counts=n()) %>% arrange(desc(counts)))
+(face_words <- face5 %>% group_by(word) %>% summarise(counts=n()) %>% arrange(desc(counts)))
 ```
 
 ```{r}
@@ -1105,8 +740,8 @@ face_ad_f1_m1 %>%
 
 ## Youthclub model
 ```{r}
-face_ad_studio <- face_ad2 %>% filter(CofP=="studio")
-face_ad_youthclub <- face_ad2 %>% filter(CofP=="youthclub")
+face_ad_studio <- face5 %>% filter(CofP=="studio")
+face_ad_youthclub <- face5 %>% filter(CofP=="youthclub")
 ```
 
 Factors for youthclub model:
@@ -1144,66 +779,6 @@ face_ad_youthclub$sex <- as.factor(face_ad_youthclub$sex)
 contrasts(face_ad_youthclub$sex) <- contr.sum(2)
 contrasts(face_ad_youthclub$sex)
 ```
-Ethnicity.
-```{r}
-#table(droplevels(face_ad_youthclub$participant))
-```
-Define ethnicity vectors
-```{r}
-#white <- c("Jessica", "Lucy", "Chantelle")
-#somali <- c("Ali", "Amanda", "Ibrahim", "Khadir", "Lola", "Tariq")
-#arab <- c("Joe", "Sami", "ZR", "Omar", "CB")
-```
-
-
-Create ethnicity variable
-```{r}
-#face_ad_youthclub <- face_ad_youthclub %>% mutate(
-#  ethnicity = ifelse(
- #   participant %in% white, "white.br.ir",
- #   ifelse(
-#      participant %in% somali, "somali",
-#      ifelse(participant %in% arab, "arab", "other")
-#    ))
-
-#face_ad_youthclub$ethnicity <- as.factor(face_ad_youthclub$ethnicity)
-```
-
-
-```{r}
-outcode_cols <- c("#F0E442", "#0072B2", "#D55E00")
-
-ggplot(face_ad2, aes(x=reorder(CofP, normF1_20, median), y=normF1_20, fill=outcode)) + 
-  geom_boxplot(notch=TRUE) + 
- # geom_violin(draw_quantiles = c(0.25, 0.5, 0.75)) +
-  scale_fill_manual(values=outcode_cols) +
-  #xlab(NULL) +
-  facet_grid(. ~ sex, scales="free_x", space="free_x") +
-  ylab("Normalized F1 at 20%") +
-  xlab("CofP") +
-  theme(axis.text = element_text(size=rel(1)),
-        strip.text=element_text(size=rel(1)),
-        axis.title=element_text(size=rel(1)),
-        legend.title=element_text(size=rel(1)),
-        legend.text=element_text(size=rel(1)))
-
-ggplot(face_ad2, aes(x=reorder(CofP, log(norm_TL), median), y=log(norm_TL), fill=outcode)) + 
-  geom_boxplot(notch=TRUE) + 
- # geom_violin(draw_quantiles = c(0.25, 0.5, 0.75)) +
-  scale_fill_manual(values=outcode_cols) +
-  #xlab(NULL) +
-  facet_grid(. ~ sex, scales="free_x", space="free_x") +
-  ylab("log(Trajectory Length") +
-  xlab("CofP") +
-  theme(axis.text = element_text(size=rel(1)),
-        strip.text=element_text(size=rel(1)),
-        axis.title=element_text(size=rel(1)),
-        legend.title=element_text(size=rel(1)),
-        legend.text=element_text(size=rel(1)))
-```
-
-Contrasts:
-
 Outcode:
 ```{r}
 table(face_ad_youthclub$outcode)
@@ -1270,119 +845,75 @@ face_ad_youthclub <- face_ad_youthclub %>% mutate(
 )
 ```
 
+Check what the mean and SD actually are:
+```{r}
+mean(face_ad_youthclub$normF1_20)
+sd(face_ad_youthclub$normF1_20)
+```
+
+
 Plot these to check it worked:
 ```{r}
 ggplot(face_ad_youthclub, aes(x=normF1_20))+geom_histogram()+theme_minimal()
 ggplot(face_ad_youthclub, aes(x=normF1_20z))+geom_histogram()+theme_minimal() + geom_vline(xintercept=2) + geom_vline(xintercept=-2)
+```
+```{r}
+mean(face_ad_youthclub$normF1_20)
+sd(face_ad_youthclub$normF1_20)
+
+mean(face_ad_youthclub$LogDur)
+sd(face_ad_youthclub$LogDur)
 ```
 
 
 ### Run the model
 Model just for Youthclub
 ```{r}
-#face_ad_y_f1_m1c <- brm(normF1_20z ~ LogDurZ +
- #                         outcode*task +
+#set.seed(12)
+#face_ad_y_f1_m1 <- brm(normF1_20z ~ LogDurZ +
+ #                        outcode*task +
   #                        sex*task +
-                          #ethnicity*task +
    #                    outcode*prec.seg +
     #                     outcode*following +
-     #                    outcode*sex +
-      #                   sex*prec.seg +
-       #                  sex*following +
-        #                 ethnicity*prec.seg +
-         #                  ethnicity*following +
-         #              (1 + LogDurZ + prec.seg + following + task | participant) + 
-          #           (1|word), data = face_ad_youthclub,
-          #           prior = my_priors3,
-          #           control = list(adapt_delta = 0.99),
-    #        cores=2,
-         #   sample_prior = TRUE,
-         #   file="models_new_new/face_ad_y_f1_m1c")
+     #                   outcode*sex +
+      #                (1 + prec.seg + following + task | participant) + 
+       #              (1|word), data = face_ad_youthclub,
+        #             prior = my_priors3,
+         #           control = list(adapt_delta = 0.99),
+          # file="models/face_ad_y_f1_m2")
 ```
 
 ### Load model
 ```{r}
-face_ad_y_f1_m1 <- read_rds("models_new_new/face_ad_y_f1_m1c.rds")
+face_ad_y_f1_m1 <- read_rds("models/face_ad_y_f1_m1.rds")
 ```
 
 ### PP check
 ```{r}
-pp_check(face_ad_y_f1_m1c, nsamples=100)
+pp_check(face_ad_y_f1_m1, nsamples=100)
 ```
 
 ### Model summary
 ```{r}
 (face_ad_y_f1_sum <- parameters::model_parameters(face_ad_y_f1_m1, ci=0.95, ci_method="hdi", effects="fixed"))
 ```
-```{r}
-(face_ad_y_f1_sum <- face_ad_y_f1_sum %>% mutate(
-  Median = round(Median, 2),
-  CI_low = round(CI_low, 2),
-  CI_high = round(CI_high, 2),
-  pd = round(pd, 2),
-  ROPE_Percentage = round(ROPE_Percentage, 2)
-))
-```
-Write to csv:
-```{r}
-face_ad_y_f1_sum %>% write_csv("sumtabs_new/face_ad_y_f1_sum.csv")
-```
-
-
 
 ### Stanplot
-```{r}
-yc_labels <- c("Intercept",
-               "log(duration)",
-               "outcode",
-               "task=reading",
-               "sex",
-               "prec=approx.glide",
-               "prec=coronal",
-               "prec=labial",
-               "prec=nasal",
-               "prec=other",
-               "fol=coda nasal",
-               "fol=word-final open",
-               "fol=word-medial open",
-               "fol=coda voiced",
-               "outcode * task=reading",
-               "task=reading * sex",
-               "outcode * prec=approx.glide",
-               "outcode * prec=coronal",
-               "outcode * prec=labial",
-               "outcode * prec=nasal",
-               "outcode * prec=other",
-               "outcode * fol=coda nasal",
-               "outcode * fol=word-final open",
-               "outcode * fol=word-medial open",
-               "outcode * fol=coda voiced",
-               "outcode * sex")
-```
-
 
 ```{r}
 #mcmc_plot(face_ad_f1_m1, type="intervals",  pars = "^b", prob = 0.9, prob_outer=0.95)
 
-mcmc_plot(face_ad_y_f1_m1, type="intervals",  pars = "^b", prob = 0.9, prob_outer=0.95) +
-  scale_y_discrete(labels=yc_labels) +
-  theme(axis.text = element_text(size=rel(1)))
+mcmc_plot(face_ad_y_f1_m1, type="intervals",  pars = "^b", prob = 0.9, prob_outer=0.95)# +
+ # scale_y_discrete(labels=yc_labels) +
+  #theme(axis.text = element_text(size=rel(1)))
 
 #x <- as.matrix(face_ad_f1_m1, pars = "^b")  
 #mcmc_intervals(x, prob = 0.9, prob_outer=0.95) + scale_y_discrete(labels=my_labels)
 ```
 
-
-```{r}
-stanplot(face_ad_y_f1_m1, type="intervals",  pars = "^b", prob = 0.9, prob_outer=0.95)
-```
-
-
-
-
 ### Preceding environment
 ```{r}
-face_ad_y_f1_m1c %>%
+face_ad_y_f1_m1 %>%
   emmeans( ~ prec.seg | outcode) %>%
   gather_emmeans_draws() %>%
   ggplot(aes(x = reorder(prec.seg, .value, median), y = .value, fill=outcode)) +
@@ -1403,35 +934,38 @@ contrasts(face_ad_youthclub$prec.seg)
 ```
 
 ```{r}
-emmeans(face_ad_y_f1_m1c, ~ prec.seg)
+emmeans(face_ad_y_f1_m1, ~ prec.seg)
 ```
-0.17+0.12-0.16+0.71-0.04-0.33 =0.47
-
 
 Effect of preceding velar:
 ```{r}
-hypothesis(face_ad_y_f1_m1c, "prec.seg1 > 0", alpha=0.025)
-hypothesis(face_ad_y_f1_m1c, "prec.seg2 > 0", alpha=0.025)
-hypothesis(face_ad_y_f1_m1c, "prec.seg3 > 0", alpha=0.025)
-hypothesis(face_ad_y_f1_m1c, "prec.seg4 > 0", alpha=0.025)
-hypothesis(face_ad_y_f1_m1c, "prec.seg5 > 0", alpha=0.025)
-hypothesis(face_ad_y_f1_m1c, "(Intercept - (prec.seg1 + prec.seg2 + prec.seg3 + prec.seg4 + prec.seg5)) > 0", alpha=0.025)
+hypothesis(face_ad_y_f1_m1, "prec.seg1 > 0", alpha=0.025)
+hypothesis(face_ad_y_f1_m1, "prec.seg2 > 0", alpha=0.025)
+hypothesis(face_ad_y_f1_m1, "prec.seg3 > 0", alpha=0.025)
+hypothesis(face_ad_y_f1_m1, "prec.seg4 > 0", alpha=0.025)
+hypothesis(face_ad_y_f1_m1, "prec.seg5 > 0", alpha=0.025)
+hypothesis(face_ad_y_f1_m1, "(Intercept - (prec.seg1 + prec.seg2 + prec.seg3 + prec.seg4 + prec.seg5)) > 0", alpha=0.025)
 ```
 
-Interaction of CofP and preceding velar:
+Interaction of outcode and preceding velar:
 ```{r}
-hypothesis(face_ad_y_f1_m1c, "outcode1:prec.seg1 > 0", alpha=0.025)
-hypothesis(face_ad_y_f1_m1c, "outcode1:prec.seg2 > 0", alpha=0.025)
-hypothesis(face_ad_y_f1_m1c, "outcode1:prec.seg3 > 0", alpha=0.025)
-hypothesis(face_ad_y_f1_m1c, "outcode1:prec.seg4 > 0", alpha=0.025)
-hypothesis(face_ad_y_f1_m1c, "outcode1:prec.seg5 > 0", alpha=0.025)
-hypothesis(face_ad_y_f1_m1c, "(Intercept - (outcode1:prec.seg1 + outcode1:prec.seg2 + outcode1:prec.seg3 + outcode1:prec.seg4 + outcode1:prec.seg5)) > 0", alpha=0.025)
+hypothesis(face_ad_y_f1_m1, "outcode1:prec.seg1 > 0", alpha=0.025)
+hypothesis(face_ad_y_f1_m1, "outcode1:prec.seg2 > 0", alpha=0.025)
+hypothesis(face_ad_y_f1_m1, "outcode1:prec.seg3 > 0", alpha=0.025)
+hypothesis(face_ad_y_f1_m1, "outcode1:prec.seg4 > 0", alpha=0.025)
+hypothesis(face_ad_y_f1_m1, "outcode1:prec.seg5 > 0", alpha=0.025)
+hypothesis(face_ad_y_f1_m1, "(Intercept - (outcode1:prec.seg1 + outcode1:prec.seg2 + outcode1:prec.seg3 + outcode1:prec.seg4 + outcode1:prec.seg5)) > 0", alpha=0.025)
+```
+Oh, so there *is* an interaction of outcode and preceding velar.
+
+```{r}
+emmeans(face_ad_y_f1_m1, ~ prec.seg|outcode)
 ```
 
 
 ### Following environment
 ```{r}
-face_ad_y_f1_m1c %>%
+face_ad_y_f1_m1 %>%
   emmeans( ~ following | outcode) %>%
   gather_emmeans_draws() %>%
   ggplot(aes(x = reorder(following, .value, median), y = .value, fill=outcode)) +
@@ -1452,19 +986,19 @@ contrasts(face_ad_youthclub$following)
 ```
 
 ```{r}
-emmeans(face_ad_y_f1_m1c, ~ following)
+emmeans(face_ad_y_f1_m1, ~ following)
 ```
-0.17+0.12-0.16+0.71-0.04-0.33 =0.47
+
 
 
 Effect of following voiceless
 ```{r}
-hypothesis(face_ad_y_f1_m1c, "following1 > 0", alpha=0.025)
-hypothesis(face_ad_y_f1_m1c, "following2 > 0", alpha=0.025)
-hypothesis(face_ad_y_f1_m1c, "following3 > 0", alpha=0.025)
-hypothesis(face_ad_y_f1_m1c, "following4 > 0", alpha=0.025)
+hypothesis(face_ad_y_f1_m1, "following1 > 0", alpha=0.025)
+hypothesis(face_ad_y_f1_m1, "following2 > 0", alpha=0.025)
+hypothesis(face_ad_y_f1_m1, "following3 > 0", alpha=0.025)
+hypothesis(face_ad_y_f1_m1, "following4 > 0", alpha=0.025)
 #hypothesis(face_ad_y_f1_m1c, "prec.seg5 > 0", alpha=0.025)
-hypothesis(face_ad_y_f1_m1c, "(Intercept - (following1 + following2 + following3 + following4)) > 0", alpha=0.025)
+hypothesis(face_ad_y_f1_m1, "(Intercept - (following1 + following2 + following3 + following4)) > 0", alpha=0.025)
 ```
 
 Interaction of outcode and following voiceless
@@ -1477,9 +1011,8 @@ hypothesis(face_ad_y_f1_m1, "outcode1:following4 > 0", alpha=0.025)
 hypothesis(face_ad_y_f1_m1, "(Intercept - (outcode1:following1 + outcode1:following2 + outcode1:following3 + outcode1:following4)) > 0", alpha=0.025)
 ```
 
-xxx
 
-### Sex and task
+### Sex, outcode and task
 
 ```{r}
 face_ad_y_f1_m1 %>%
@@ -1497,7 +1030,23 @@ face_ad_y_f1_m1 %>%
         axis.text = element_text(size=rel(1)),
         strip.text=element_text(size=rel(1)))
 ```
-
+Outcode and task interaction:
+```{r}
+face_ad_y_f1_m1 %>%
+  emmeans( ~ task | outcode) %>%
+  gather_emmeans_draws() %>%
+  ggplot(aes(x = reorder(task, .value, median), y = .value, fill=outcode)) +
+  geom_eye(.width = c(.95)) +
+  stat_summary(aes(group = outcode), fun.y = mean, geom = "line") +
+  facet_grid(~ outcode) +
+  theme_light() + 
+  scale_fill_manual(values = c("gray80", "skyblue")) + 
+  xlab(NULL) +
+  theme(legend.position="none",
+        axis.text.x = element_text(size=rel(1), angle=45, hjust=1),
+        axis.text = element_text(size=rel(1)),
+        strip.text=element_text(size=rel(1)))
+```
 
 
 ### Random intercepts
@@ -1515,6 +1064,18 @@ face_ad_y_f1_m1 %>%
 
 So Joe has a particularly close FACE - not surprising, really.
 
+Word random intercepts, using the "frequent words" vector we created earlier:
+```{r}
+face_ad_y_f1_m1 %>%
+  spread_draws(b_Intercept, r_word[word,term]) %>%
+  filter(word %in% face_fr_words) %>% 
+  #head(10)
+  filter(term == "Intercept") %>% 
+  mutate(word_median = r_word) %>%
+ # median_hdi(participant_median = b_Intercept + r_participant) %>%
+  ggplot(aes(y = reorder(word, word_median), x = word_median)) +
+  geom_halfeyeh(point_interval=median_hdi, .width=0.95) + geom_vline(xintercept=0, lty=2, color="red")
+```
 
 ## Studio model
 Factors for studio model:
@@ -1523,7 +1084,6 @@ Factors for studio model:
 
 - outcode
 
-- ethnicity?
 
 ### Task
 ```{r}
@@ -1532,9 +1092,9 @@ table(face_ad_studio$task)
 
 ### sum-code factors
 
-The factors are: task, ~~sex~~, ~~ethnoling~~, ~~CofP~~, outcode, following seg, prec.seg
+The factors are: task, outcode, following seg, prec.seg
 
-Dummy-code task and set reference to interview. This is because more than a thousand tokens are interview, and only 72 are reading!
+Dummy-code task and set reference to interview.
 ```{r}
 table(face_ad_studio$task)
 face_ad_studio$task <- as.factor(face_ad_studio$task)
@@ -1613,6 +1173,15 @@ ggplot(face_ad_studio, aes(x=normF1_20z))+geom_histogram()+theme_minimal() + geo
 ```
 Looks OK.
 
+```{r}
+mean(face_ad_studio$normF1_20)
+sd(face_ad_studio$normF1_20)
+
+mean(face_ad_studio$LogDur)
+sd(face_ad_studio$LogDur)
+```
+
+
 ### Run the model
 studio model
 ```{r}
@@ -1620,17 +1189,15 @@ studio model
  #                         outcode*task +
   #                     outcode*prec.seg +
    #                      outcode*following +
-    #                   (1 + LogDurZ + prec.seg + following + task | participant) + 
-     #                (1 + outcode|word), data = face_ad_studio,
+    #                   (1 + prec.seg + following + task | participant) + 
+     #                (1|word), data = face_ad_studio,
       #               prior = my_priors3,
        #              control = list(adapt_delta = 0.99),
-        #    cores=2,
-         #   sample_prior=TRUE,
-          #  file="models_new/face_ad_st_f1_m1")
+        #    file="models/face_ad_st_f1_m1")
 ```
 ### Load model
 ```{r}
-face_ad_st_f1_m1 <- read_rds("models_new/face_ad_st_f1_m1.rds")
+face_ad_st_f1_m1 <- read_rds("models/face_ad_st_f1_m1.rds")
 ```
 
 
@@ -1644,57 +1211,14 @@ pp_check(face_ad_st_f1_m1)
 ```{r}
 (face_ad_st_f1_sum <- parameters::model_parameters(face_ad_st_f1_m1, ci=0.95, ci_method="hdi", effects="fixed"))
 ```
-```{r}
-(face_ad_st_f1_sum <- face_ad_st_f1_sum %>% mutate(
-  Median = round(Median, 2),
-  CI_low = round(CI_low, 2),
-  CI_high = round(CI_high, 2),
-  pd = round(pd, 2),
-  ROPE_Percentage = round(ROPE_Percentage, 2),
-  Rhat = round(Rhat, 2)
-))
-```
-Write to csv:
-```{r}
-face_ad_st_f1_sum %>% write_csv("sumtabs_new/face_ad_st_f1_sum.csv")
-```
+
 ### Stanplot
 
-```{r}
-st_labels <- c("Intercept",
-               "log(duration)",
-               "outcode",
-               "task=reading",
-               #"sex",
-               "prec=approx.glide",
-               "prec=coronal",
-               "prec=labial",
-               "prec=nasal",
-               "prec=other",
-               "fol=coda nasal",
-               "fol=word-final open",
-               "fol=word-medial open",
-               "fol=coda voiced",
-               "outcode * task=reading",
-               #"task=reading * sex",
-               "outcode * prec=approx.glide",
-               "outcode * prec=coronal",
-               "outcode * prec=labial",
-               "outcode * prec=nasal",
-               "outcode * prec=other",
-               "outcode * fol=coda nasal",
-               "outcode * fol=word-final open",
-               "outcode * fol=word-medial open",
-               "outcode * fol=coda voiced")
-```
+
 
 
 ```{r}
 mcmc_plot(face_ad_st_f1_m1, type="intervals",  pars = "^b", prob = 0.9, prob_outer=0.95)
-
-mcmc_plot(face_ad_st_f1_m1, type="intervals",  pars = "^b", prob = 0.9, prob_outer=0.95) +
-  scale_y_discrete(labels=st_labels) +
-  theme(axis.text = element_text(size=rel(1)))
 
 #x <- as.matrix(face_ad_f1_m1, pars = "^b")  
 #mcmc_intervals(x, prob = 0.9, prob_outer=0.95) + scale_y_discrete(labels=my_labels)
@@ -1724,7 +1248,7 @@ contrasts(face_ad_studio$prec.seg)
 ```{r}
 emmeans(face_ad_st_f1_m1, ~ prec.seg)
 ```
-0.17+0.12-0.16+0.71-0.04-0.33 =0.47
+
 
 
 Effect of preceding velar:
@@ -1736,8 +1260,9 @@ hypothesis(face_ad_st_f1_m1, "prec.seg4 > 0", alpha=0.025)
 hypothesis(face_ad_st_f1_m1, "prec.seg5 > 0", alpha=0.025)
 hypothesis(face_ad_st_f1_m1, "(Intercept - (prec.seg1 + prec.seg2 + prec.seg3 + prec.seg4 + prec.seg5)) > 0", alpha=0.025)
 ```
+Preceding velar has an effect but we already knew that. What we are especially interested in is the interaction with outcode.
 
-Interaction of CofP and preceding velar:
+Interaction of outcode and preceding velar:
 ```{r}
 hypothesis(face_ad_st_f1_m1, "outcode1:prec.seg1 > 0", alpha=0.025)
 hypothesis(face_ad_st_f1_m1, "outcode1:prec.seg2 > 0", alpha=0.025)
@@ -1773,7 +1298,7 @@ contrasts(face_ad_studio$following)
 ```{r}
 emmeans(face_ad_st_f1_m1, ~ following)
 ```
-0.17+0.12-0.16+0.71-0.04-0.33 =0.47
+
 
 
 Effect of following voiceless
@@ -1812,14 +1337,25 @@ face_ad_st_f1_m1 %>%
   geom_halfeyeh(point_interval=median_hdi, .width=0.95) + geom_vline(xintercept=0, lty=2, color="red")
 ```
 
-
-
+Word random intercepts, using the "frequent words" vector we created earlier:
+```{r}
+face_ad_st_f1_m1 %>%
+  spread_draws(b_Intercept, r_word[word,term]) %>%
+  filter(word %in% face_fr_words) %>% 
+  #head(10)
+  filter(term == "Intercept") %>% 
+  mutate(word_median = r_word) %>%
+ # median_hdi(participant_median = b_Intercept + r_participant) %>%
+  ggplot(aes(y = reorder(word, word_median), x = word_median)) +
+  geom_halfeyeh(point_interval=median_hdi, .width=0.95) + geom_vline(xintercept=0, lty=2, color="red")
+```
+In both the Studio and Youthclub CofPs, the words "saying" and "okay" are predicted to show a higher onset F1.
 
 # FACE: adolescents: TL
 ## EDA
 Check whether TL is different by outcode, sex, CofP, ethnicity, and also by following seg, preceding seg.
 ```{r}
-ggplot(face_ad2, aes(x=log(norm_TL))) + geom_histogram() +
+ggplot(face5, aes(x=log(norm_TL))) + geom_histogram() +
   theme_minimal()
 ```
 It's pretty much OK.
@@ -1837,7 +1373,7 @@ We need to:
 
 ### Task
 ```{r}
-table(face_ad2$task)
+table(face5$task)
 ```
 
 
@@ -1848,30 +1384,30 @@ The factors for the CofP model are just CofP, outcode, following seg, prec.seg
 Dummy-code task and set reference to interview. This is because more than a thousand tokens are interview, and only 72 are reading!
 CofP:
 ```{r}
-table(face_ad2$CofP)
-face_ad2$CofP <- as.factor(face_ad2$CofP)
-contrasts(face_ad2$CofP) <- contr.sum(2)
-contrasts(face_ad2$CofP)
+table(face5$CofP)
+face5$CofP <- as.factor(face5$CofP)
+contrasts(face5$CofP) <- contr.sum(2)
+contrasts(face5$CofP)
 ```
 Prec.seg:
 ```{r}
-table(face_ad2$prec.seg)
-face_ad2$prec.seg <- as.factor(face_ad2$prec.seg)
-contrasts(face_ad2$prec.seg) <- contr.sum(6)
-contrasts(face_ad2$prec.seg)
+table(face5$prec.seg)
+face5$prec.seg <- as.factor(face5$prec.seg)
+contrasts(face5$prec.seg) <- contr.sum(6)
+contrasts(face5$prec.seg)
 ```
 
 
 Following seg:
 ```{r}
-table(face_ad2$following)
-face_ad2$following <- as.factor(face_ad2$following)
-contrasts(face_ad2$following) <- contr.sum(5)
-contrasts(face_ad2$following)
+table(face5$following)
+face5$following <- as.factor(face5$following)
+contrasts(face5$following) <- contr.sum(5)
+contrasts(face5$following)
 ```
 ### log-transform TL
 ```{r}
-face_ad3 <- face_ad2 %>% mutate(
+face5 <- face5 %>% mutate(
   LogTL = log(norm_TL)
 )
 ```
@@ -1880,9 +1416,9 @@ face_ad3 <- face_ad2 %>% mutate(
 ### set priors
 Get range of the dependent variable:
 ```{r}
-summary(face_ad3$LogTL)
-max(face_ad3$LogTL)-min(face_ad3$LogTL)
-sd(face_ad3$LogTL)
+summary(face5$LogTL)
+max(face5$LogTL)-min(face5$LogTL)
+sd(face5$LogTL)
 ```
 
 ```{r}
@@ -1902,13 +1438,13 @@ my_priors3 <- c(
 
 #### Check for outliers
 ```{r}
-ggplot(face_ad3, aes(x=LogTL))+geom_histogram(bins=100) +theme_minimal()
+ggplot(face5, aes(x=LogTL))+geom_histogram(bins=100) +theme_minimal()
 ```
 Looks OK
 
 ### z-score the continuous variables
 ```{r}
-face_ad3 <- face_ad3 %>% mutate(
+face5 <- face5 %>% mutate(
   LogDurZ = scale(LogDur, center = TRUE),
   LogTLz = scale(LogTL, center = TRUE)
 )
@@ -1916,40 +1452,52 @@ face_ad3 <- face_ad3 %>% mutate(
 
 Plot these to check it worked:
 ```{r}
-ggplot(face_ad3, aes(x=LogTL))+geom_histogram()+theme_minimal()
-ggplot(face_ad3, aes(x=LogTLz))+geom_histogram()+theme_minimal() + geom_vline(xintercept=2) + geom_vline(xintercept=-2)
+ggplot(face5, aes(x=LogTL))+geom_histogram()+theme_minimal()
+ggplot(face5, aes(x=LogTLz))+geom_histogram()+theme_minimal() + geom_vline(xintercept=2) + geom_vline(xintercept=-2)
 ```
 Looks OK.
+
+```{r}
+mean(face5$LogTL)
+sd(face5$LogTL)
+
+mean(face5$LogDur)
+sd(face5$LogDur)
+```
+Get these out of logarithmic form and back to normed formant frequencies:
+```{r}
+exp(mean(face5$LogTL))
+exp(sd(face5$LogTL))
+```
+
+```{r}
+ggplot(face5, aes(x=norm_TL)) + 
+  geom_histogram() +
+  geom_vline(xintercept = exp(mean(face5$LogTL)), color="red")
+
+ggplot(face5, aes(x=LogTL)) + 
+  geom_histogram() +
+  geom_vline(xintercept = mean(face5$LogTL), color="red")
+```
+
 
 ### Run the model
 Initial model with just CofP
 ```{r}
-#price_ad_f2_m1a <- brm(normF2_20z ~ LogDurZ +
- #                      CofP +
-  #                       prec.seg +
-   #                        following +
-    #                   (1 + LogDurZ + prec.seg + following | participant) + 
-     #                (1+ CofP|word), data = price_ad2,
-      #               prior = my_priors3,
-       #              control = list(adapt_delta = 0.99),
-        #    cores=2,
-         #   file="models_new/price_ad_f2_m1a")
-
+set.seed(16) #for reproducability
 #face_ad_tl_m1 <- brm(LogTLz ~ LogDurZ +
  #                      CofP*prec.seg +
   #                         CofP*following +
-   #                    (1 + LogDurZ + prec.seg + following | participant) + 
-    #                 (1+ CofP|word), data = face_ad3,
+   #                    (1 + prec.seg + following | participant) + 
+    #                 (1+ CofP|word), data = face5,
      #                prior = my_priors3,
       #               control = list(adapt_delta = 0.99),
-       #     cores=2,
-        #    sample_prior= TRUE,
-         #   file="models_new/face_ad_tl_m1")
+       #     file="models/face_ad_tl_m1")
 ```
 
 ### Load model
 ```{r}
-face_ad_tl_m1 <- read_rds("models_new/face_ad_tl_m1.rds")
+face_ad_tl_m1 <- read_rds("models/face_ad_tl_m1.rds")
 ```
 
 
@@ -1964,29 +1512,52 @@ pp_check(face_ad_tl_m1)
 (face_ad_tl_sum <- parameters::model_parameters(face_ad_tl_m1, ci=0.95, ci_method="hdi", effects="fixed"))
 ```
 
-
-
-
-```{r}
-(face_ad_tl_sum <- face_ad_tl_sum %>% mutate(
-  Median = round(Median, 2),
-  CI_low = round(CI_low, 2),
-  CI_high = round(CI_high, 2),
-  pd = round(pd, 2),
-  ROPE_Percentage = round(ROPE_Percentage, 2),
-  Rhat = round(Rhat, 2)
-))
-```
-Write to csv:
-```{r}
-face_ad_tl_sum %>% write_csv("sumtabs_new/face_ad_tl_sum.csv")
-```
 ### Stanplot
 
 ```{r}
 stanplot(face_ad_tl_m1, type="intervals",  pars = "^b", prob = 0.9, prob_outer=0.95)
 ```
 So there probably is a difference between the CofPs.
+
+### CofPs
+Remember these histograms from earlier?
+```{r}
+ggplot(face5, aes(x=norm_TL)) + 
+  geom_histogram() +
+  geom_vline(xintercept = exp(mean(face5$LogTL)), color="red")
+
+ggplot(face5, aes(x=LogTL)) + 
+  geom_histogram() +
+  geom_vline(xintercept = mean(face5$LogTL), color="red")
+```
+
+Add the CofP coefficient.
+```{r}
+#fixed <- fixef(face_ad_tl_m1)
+
+CofP_fixef <- as_tibble(face_ad_tl_sum) %>% filter(Parameter=="b_CofP1")
+
+CofP_fixef$Median
+```
+
+
+```{r}
+ggplot(face5, aes(x=LogTL)) + 
+  geom_histogram() +
+  geom_vline(xintercept = mean(face5$LogTL), color="red") +
+  geom_vline(xintercept = (mean(face5$LogTL)+(sd(face5$LogTL)*CofP_fixef$Median)), color="blue") +
+  geom_vline(xintercept = (mean(face5$LogTL)-(sd(face5$LogTL)*CofP_fixef$Median)), color="blue")
+```
+```{r}
+ggplot(face5, aes(x=norm_TL)) + 
+  geom_histogram() +
+  geom_vline(xintercept = exp(mean(face5$LogTL)), color="red") + # back-transformed mean
+  geom_vline(xintercept = median(face5$norm_TL), color="green") + #actual median
+  geom_vline(xintercept = (exp(mean(face5$LogTL)+(sd(face5$LogTL)*CofP_fixef$Median))), color="blue") +
+  geom_vline(xintercept = (exp(mean(face5$LogTL)-(sd(face5$LogTL)*CofP_fixef$Median))), color="blue")
+```
+
+
 ### Preceding segment
 
 Preceding segment:
@@ -2103,17 +1674,8 @@ face_ad_tl_m1 %>%
         axis.text = element_text(size=rel(1.1)),
         axis.title.x = element_text(size=rel(1.1)))
 ```
-#### Word
-Check which words were most frequent in the data:
-```{r}
-(face_words <- face_ad3 %>% group_by(word) %>% summarise(counts=n()) %>% arrange(desc(counts)))
-```
 
-```{r}
-face_fr_words <- face_words %>% filter(counts > 20) %>% dplyr::pull(word) 
-```
-
-
+Word random intercepts, using the "frequent words" vector we created earlier:
 ```{r}
 face_ad_tl_m1 %>%
   spread_draws(b_Intercept, r_word[word,term]) %>%
@@ -2126,15 +1688,7 @@ face_ad_tl_m1 %>%
   geom_halfeyeh(point_interval=median_hdi, .width=0.95) + geom_vline(xintercept=0, lty=2, color="red")
 ```
 
-
 ## Youthclub model
-
-
-```{r}
-face_ad_tl_studio <- face_ad3 %>% filter(CofP=="studio")
-face_ad_tl_youthclub <- face_ad3 %>% filter(CofP=="youthclub")
-```
-
 Factors for youthclub model:
 
 - task
@@ -2147,94 +1701,65 @@ Factors for youthclub model:
 
 ### Task
 ```{r}
-table(face_ad_tl_youthclub$task)
+table(face_ad_youthclub$task)
 ```
 Good. 
 
 ### sum-code factors
 
-The factors are: task, sex, ethnoling, CofP, outcode, following seg, prec.seg
+The factors are: task, sex,  outcode, following seg, prec.seg
 
-Dummy-code task and set reference to interview. This is because more than a thousand tokens are interview, and only 72 are reading!
+Dummy-code task and set reference to interview.
 ```{r}
-table(face_ad_tl_youthclub$task)
-face_ad_tl_youthclub$task <- as.factor(face_ad_tl_youthclub$task)
+table(face_ad_youthclub$task)
+face_ad_youthclub$task <- as.factor(face_ad_youthclub$task)
 #price_ad_youthclub$task <- relevel(price_ad_youthclub$task, ref="interview")
 #table(price_ad_youthclub$task)
 ```
 
 Sex:
 ```{r}
-table(face_ad_tl_youthclub$sex)
-face_ad_tl_youthclub$sex <- as.factor(face_ad_tl_youthclub$sex)
-contrasts(face_ad_tl_youthclub$sex) <- contr.sum(2)
-contrasts(face_ad_tl_youthclub$sex)
-```
-Ethnicity.
-```{r}
-table(droplevels(face_ad_tl_youthclub$participant))
-```
-Define ethnicity vectors
-```{r}
-#white <- c("Jessica", "Lucy", "Chantelle")
-#somali <- c("Ali", "Amanda", "Ibrahim", "Khadir", "Lola", "Tariq")
-#arab <- c("Joe", "Sami", "ZR", "Omar", "CB")
+table(face_ad_youthclub$sex)
+face_ad_youthclub$sex <- as.factor(face_ad_youthclub$sex)
+contrasts(face_ad_youthclub$sex) <- contr.sum(2)
+contrasts(face_ad_youthclub$sex)
 ```
 
-
-Create ethnicity variable
-```{r}
-#face_ad_tl_youthclub <- face_ad_tl_youthclub %>% mutate(
-#  ethnicity = ifelse(
-#    participant %in% white, "white.br.ir",
-#    ifelse(
-#      participant %in% somali, "somali",
-#      ifelse(participant %in% arab, "arab", "other")
-#    )))
-
-#face_ad_tl_youthclub$ethnicity <- as.factor(face_ad_tl_youthclub$ethnicity)
-```
-Contrasts:
-```{r}
-#table(face_ad_tl_youthclub$ethnicity)
-#contrasts(face_ad_tl_youthclub$ethnicity) <- contr.sum(4)
-#contrasts(face_ad_tl_youthclub$ethnicity)
-```
 
 Outcode:
 ```{r}
-table(face_ad_tl_youthclub$outcode)
-face_ad_tl_youthclub$outcode <- factor(face_ad_tl_youthclub$outcode)
-contrasts(face_ad_tl_youthclub$outcode) <- contr.sum(2)
-contrasts(face_ad_tl_youthclub$outcode)
+table(face_ad_youthclub$outcode)
+face_ad_youthclub$outcode <- factor(face_ad_youthclub$outcode)
+contrasts(face_ad_youthclub$outcode) <- contr.sum(2)
+contrasts(face_ad_youthclub$outcode)
 ```
 Prec.seg:
 ```{r}
-table(face_ad_tl_youthclub$sex, face_ad_tl_youthclub$prec.seg)
-table(face_ad_tl_youthclub$outcode, face_ad_tl_youthclub$prec.seg)
+table(face_ad_youthclub$sex, face_ad_youthclub$prec.seg)
+table(face_ad_youthclub$outcode, face_ad_youthclub$prec.seg)
 #table(face_ad_tl_youthclub$ethnicity, face_ad_tl_youthclub$prec.seg)
 
-face_ad_tl_youthclub$prec.seg <- as.factor(face_ad_tl_youthclub$prec.seg)
-contrasts(face_ad_tl_youthclub$prec.seg) <- contr.sum(6)
-contrasts(face_ad_tl_youthclub$prec.seg)
+face_ad_youthclub$prec.seg <- as.factor(face_ad_youthclub$prec.seg)
+contrasts(face_ad_youthclub$prec.seg) <- contr.sum(6)
+contrasts(face_ad_youthclub$prec.seg)
 ```
 
 
 
 Following seg:
 ```{r}
-table(face_ad_tl_youthclub$sex, face_ad_tl_youthclub$following)
-table(face_ad_tl_youthclub$outcode, face_ad_tl_youthclub$following)
+table(face_ad_youthclub$sex, face_ad_youthclub$following)
+table(face_ad_youthclub$outcode, face_ad_youthclub$following)
 #table(face_ad_tl_youthclub$ethnicity, face_ad_tl_youthclub$following)
 
-face_ad_tl_youthclub$following <- as.factor(face_ad_tl_youthclub$following)
-contrasts(face_ad_tl_youthclub$following) <- contr.sum(5)
-contrasts(face_ad_tl_youthclub$following)
+face_ad_youthclub$following <- as.factor(face_ad_youthclub$following)
+contrasts(face_ad_youthclub$following) <- contr.sum(5)
+contrasts(face_ad_youthclub$following)
 ```
 
 ### log-transform TL
 ```{r}
-face_ad_tl_youthclub <- face_ad_tl_youthclub %>% mutate(
+face_ad_youthclub <- face_ad_youthclub %>% mutate(
   LogTL = log(norm_TL)
 )
 ```
@@ -2243,9 +1768,9 @@ face_ad_tl_youthclub <- face_ad_tl_youthclub %>% mutate(
 ### set priors
 Get range of the dependent variable:
 ```{r}
-summary(face_ad_tl_youthclub$LogTL)
-max(face_ad_tl_youthclub$LogTL)-min(face_ad_tl_youthclub$LogTL)
-sd(face_ad_tl_youthclub$LogTL)
+summary(face_ad_youthclub$LogTL)
+max(face_ad_youthclub$LogTL)-min(face_ad_youthclub$LogTL)
+sd(face_ad_youthclub$LogTL)
 ```
 
 ```{r}
@@ -2265,12 +1790,12 @@ my_priors3 <- c(
 
 ### Check for outliers
 ```{r}
-ggplot(face_ad_tl_youthclub, aes(x=LogTL))+geom_histogram(bins=100) +theme_minimal()
+ggplot(face_ad_youthclub, aes(x=LogTL))+geom_histogram(bins=100) +theme_minimal()
 ```
 
 ### z-score the continuous variables
 ```{r}
-face_ad_tl_youthclub <- face_ad_tl_youthclub %>% mutate(
+face_ad_youthclub <- face_ad_youthclub %>% mutate(
   LogDurZ = scale(LogDur, center = TRUE),
   LogTLz = scale(LogTL, center = TRUE)
 )
@@ -2278,54 +1803,42 @@ face_ad_tl_youthclub <- face_ad_tl_youthclub %>% mutate(
 
 Plot these to check it worked:
 ```{r}
-ggplot(face_ad_tl_youthclub, aes(x=LogTL))+geom_histogram()+theme_minimal()
-ggplot(face_ad_tl_youthclub, aes(x=LogTLz))+geom_histogram()+theme_minimal() + geom_vline(xintercept=2) + geom_vline(xintercept=-2)
+ggplot(face_ad_youthclub, aes(x=LogTL))+geom_histogram()+theme_minimal()
+ggplot(face_ad_youthclub, aes(x=LogTLz))+geom_histogram()+theme_minimal() + geom_vline(xintercept=2) + geom_vline(xintercept=-2)
 ```
 Looks pretty good.
+
+```{r}
+mean(face_ad_youthclub$LogTL)
+sd(face_ad_youthclub$LogTL)
+
+exp(mean(face_ad_youthclub$LogTL))
+exp(sd(face_ad_youthclub$LogTL))
+
+mean(face_ad_youthclub$norm_TL)
+sd(face_ad_youthclub$norm_TL)
+```
+
 
 ### Run the model
 Model just for Youthclub
 ```{r}
+set.seed(12)
 #face_ad_y_tl_m1 <- brm(LogTLz ~ LogDurZ +
- #                         outcode*task +
+ #                        outcode*task +
   #                        sex*task +
-                          #ethnicity*task +
    #                    outcode*prec.seg +
     #                     outcode*following +
-     #                    outcode*sex +
-      #                   sex*prec.seg +
-       #                  sex*following +
-        #                 ethnicity*prec.seg +
-         #                  ethnicity*following +
-       #                (1 + LogDurZ + prec.seg + following + task | participant) + 
-       #              (1|word), data = face_ad_tl_youthclub,
-      #               prior = my_priors3,
-      #               control = list(adapt_delta = 0.99),
-    #        cores=2,
-      #      sample_prior = TRUE,
-       #     file="models_new_new/face_ad_y_tl_m1")
-
-#face_ad_y_tl_m1 <- brm(LogTLz ~ LogDurZ +
- #                         outcode*task +
-  #                        sex*task +
-   #                       ethnicity*task +
-    #                   outcode*prec.seg +
-     #                    outcode*following +
-      #                   sex*prec.seg +
-       #                  sex*following +
-        #                 ethnicity*prec.seg +
-         #                  ethnicity*following +
-          #             (1 + LogDurZ + prec.seg + following + task | participant) + 
-           #          (1|word), data = face_ad_tl_youthclub,
-            #         prior = my_priors3,
-             #        control = list(adapt_delta = 0.99),
-    #        cores=2,
-     #       sample_prior = TRUE,
-      #      file="models_new/face_ad_y_tl_m1")
+     #                   outcode*sex +
+      #                (1 + prec.seg + following + task | participant) + 
+       #              (1|word), data = face_ad_youthclub,
+        #             prior = my_priors3,
+         #           control = list(adapt_delta = 0.99),
+          # file="models/face_ad_y_tl_m1")
 ```
 ### Load model
 ```{r}
-face_ad_y_tl_m1 <- read_rds("models_new_new/face_ad_y_tl_m1.rds")
+face_ad_y_tl_m1 <- read_rds("models/face_ad_y_tl_m1.rds")
 ```
 
 ### PP check
@@ -2338,25 +1851,18 @@ Pretty excellent fit.
 ```{r}
 (face_ad_y_tl_sum <- parameters::model_parameters(face_ad_y_tl_m1, ci=0.95, ci_method="hdi", effects="fixed"))
 ```
-```{r}
-(face_ad_y_tl_sum <- face_ad_y_tl_sum %>% mutate(
-  Median = round(Median, 2),
-  CI_low = round(CI_low, 2),
-  CI_high = round(CI_high, 2),
-  pd = round(pd, 2),
-  ROPE_Percentage = round(ROPE_Percentage, 2),
-  Rhat = round(Rhat, 2)
-))
-```
-Write to csv:
-```{r}
-face_ad_y_tl_sum %>% write_csv("sumtabs_new/face_ad_y_tl_sum.csv")
-```
+
 ### Stanplot
 
 ```{r}
 stanplot(face_ad_y_tl_m1, type="intervals",  pars = "^b", prob = 0.9, prob_outer=0.95)
 ```
+### Sex and outcode
+```{r}
+emmip(face_ad_y_tl_m1, ~sex, CIs=TRUE)
+```
+
+
 ### Preceding segment
 
 Preceding segment:
@@ -2378,9 +1884,6 @@ face_ad_y_tl_m1 %>%
         strip.text=element_text(size=rel(1.1))) #+ scale_y_reverse()
 ```
 
-```{r}
-contrasts(face_ad2$prec.seg)
-```
 
 ```{r}
 emmeans(face_ad_y_tl_m1, ~ prec.seg)
@@ -2427,9 +1930,6 @@ face_ad_y_tl_m1 %>%
         axis.title.y = element_text(size=rel(1.1)),
         strip.text=element_text(size=rel(1.1)))
 ```
-```{r}
-contrasts(face_ad2$following)
-```
 
 ```{r}
 emmeans(face_ad_y_tl_m1, ~ following)
@@ -2447,7 +1947,7 @@ hypothesis(face_ad_y_tl_m1, "following4 > 0", alpha=0.025)
 hypothesis(face_ad_y_tl_m1, "(Intercept - (following1 + following2 + following3 + following4 )) > 0", alpha=0.025)
 ```
 
-Interaction of CofP and preceding velar:
+Interaction of outcode and following voiceless:
 ```{r}
 hypothesis(face_ad_y_tl_m1, "outcode1:following1 > 0", alpha=0.025)
 hypothesis(face_ad_y_tl_m1, "outcode1:following2 > 0", alpha=0.025)
@@ -2459,18 +1959,20 @@ hypothesis(face_ad_y_tl_m1, "(Intercept - (outcode1:following1 + outcode1:follow
 
 
 ### Random intercepts
-Plot these intervals:
-```{r fig.height=20}
+
+Word random intercepts, using the "frequent words" vector we created earlier:
+```{r}
 face_ad_y_tl_m1 %>%
   spread_draws(b_Intercept, r_word[word,term]) %>%
+  filter(word %in% face_fr_words) %>% 
   #head(10)
   filter(term == "Intercept") %>% 
   mutate(word_median = r_word) %>%
-  #median_hdi(participant_median = b_Intercept + r_participant) %>%
-  ggplot(aes(y = word, x = word_median)) +
+ # median_hdi(participant_median = b_Intercept + r_participant) %>%
+  ggplot(aes(y = reorder(word, word_median), x = word_median)) +
   geom_halfeyeh(point_interval=median_hdi, .width=0.95) + geom_vline(xintercept=0, lty=2, color="red")
 ```
-There are some multimodal ones! Exciting.
+
 
 Participant random intercepts
 ```{r}
@@ -2483,25 +1985,10 @@ face_ad_y_tl_m1 %>%
   ggplot(aes(y = reorder(participant, participant_median), x = participant_median)) +
   geom_halfeyeh(point_interval=median_hdi, .width=0.95) + geom_vline(xintercept=0, lty=2, color="red")
 ```
-CB is very monophthongal, and Sami is very diphthongal - interesting! Unexpected.
+CB is very monophthongal.
 
 
 ## Studio model
-Factors for youthclub model:
-
-- task
-
-- ~~sex~~
-
-- ~~ethnicity~~
-
-- outcode
-
-### Task
-```{r}
-table(face_ad_tl_studio$task)
-```
-Good. 
 
 ### sum-code factors
 
@@ -2509,7 +1996,7 @@ The factors are: task, sex, ethnoling, CofP, outcode, following seg, prec.seg
 
 Dummy-code task and set reference to interview. This is because more than a thousand tokens are interview, and only 72 are reading!
 ```{r}
-table(face_ad_tl_studio$task)
+table(face_ad_studio$task)
 #price_ad_youthclub$task <- as.factor(price_ad_youthclub$task)
 #price_ad_youthclub$task <- relevel(price_ad_youthclub$task, ref="interview")
 #table(price_ad_youthclub$task)
@@ -2517,19 +2004,19 @@ table(face_ad_tl_studio$task)
 
 Outcode:
 ```{r}
-table(face_ad_tl_studio$outcode)
-face_ad_tl_studio$outcode <- factor(face_ad_tl_studio$outcode)
-contrasts(face_ad_tl_studio$outcode) <- contr.sum(2)
-contrasts(face_ad_tl_studio$outcode)
+table(face_ad_studio$outcode)
+face_ad_studio$outcode <- factor(face_ad_studio$outcode)
+contrasts(face_ad_studio$outcode) <- contr.sum(2)
+contrasts(face_ad_studio$outcode)
 ```
 Prec.seg:
 ```{r}
 
-table(face_ad_tl_studio$outcode, face_ad_tl_studio$prec.seg)
+table(face_ad_studio$outcode, face_ad_studio$prec.seg)
 
-face_ad_tl_studio$prec.seg <- as.factor(face_ad_tl_studio$prec.seg)
-contrasts(face_ad_tl_studio$prec.seg) <- contr.sum(6)
-contrasts(face_ad_tl_studio$prec.seg)
+face_ad_studio$prec.seg <- as.factor(face_ad_studio$prec.seg)
+contrasts(face_ad_studio$prec.seg) <- contr.sum(6)
+contrasts(face_ad_studio$prec.seg)
 ```
 
 
@@ -2537,17 +2024,17 @@ contrasts(face_ad_tl_studio$prec.seg)
 Following seg:
 ```{r}
 
-table(face_ad_tl_studio$outcode, face_ad_tl_studio$following)
+table(face_ad_studio$outcode, face_ad_studio$following)
 
 
-face_ad_tl_studio$following <- as.factor(face_ad_tl_studio$following)
-contrasts(face_ad_tl_studio$following) <- contr.sum(5)
-contrasts(face_ad_tl_studio$following)
+face_ad_studio$following <- as.factor(face_ad_studio$following)
+contrasts(face_ad_studio$following) <- contr.sum(5)
+contrasts(face_ad_studio$following)
 ```
 
 ### log-transform TL
 ```{r}
-face_ad_tl_studio <- face_ad_tl_studio %>% mutate(
+face_ad_studio <- face_ad_studio %>% mutate(
   LogTL = log(norm_TL)
 )
 ```
@@ -2556,9 +2043,9 @@ face_ad_tl_studio <- face_ad_tl_studio %>% mutate(
 ### set priors
 Get range of the dependent variable:
 ```{r}
-summary(face_ad_tl_studio$LogTL)
-max(face_ad_tl_studio$LogTL)-min(face_ad_tl_studio$LogTL)
-sd(face_ad_tl_studio$LogTL)
+summary(face_ad_studio$LogTL)
+max(face_ad_studio$LogTL)-min(face_ad_studio$LogTL)
+sd(face_ad_studio$LogTL)
 ```
 
 ```{r}
@@ -2578,13 +2065,12 @@ my_priors3 <- c(
 
 ### Check for outliers
 ```{r}
-ggplot(face_ad_tl_studio, aes(x=LogTL))+geom_histogram(bins=100) +theme_minimal()
+ggplot(face_ad_studio, aes(x=LogTL))+geom_histogram(bins=100) +theme_minimal()
 ```
 
-Nice!
 #### z-score the continuous variables
 ```{r}
-face_ad_tl_studio <- face_ad_tl_studio %>% mutate(
+face_ad_studio <- face_ad_studio %>% mutate(
   LogDurZ = scale(LogDur, center = TRUE),
   LogTLz = scale(LogTL, center = TRUE)
 )
@@ -2592,40 +2078,28 @@ face_ad_tl_studio <- face_ad_tl_studio %>% mutate(
 
 Plot these to check it worked:
 ```{r}
-ggplot(face_ad_tl_studio, aes(x=LogTL))+geom_histogram()+theme_minimal()
-ggplot(face_ad_tl_studio, aes(x=LogTLz))+geom_histogram()+theme_minimal() + geom_vline(xintercept=2) + geom_vline(xintercept=-2)
+ggplot(face_ad_studio, aes(x=LogTL))+geom_histogram()+theme_minimal()
+ggplot(face_ad_studio, aes(x=LogTLz))+geom_histogram()+theme_minimal() + geom_vline(xintercept=2) + geom_vline(xintercept=-2)
 ```
 Looks pretty good.
 
 ### Run the model
-Model just for Youthclub
+
 ```{r}
+set.seed(16)
 #face_ad_st_tl_m1 <- brm(LogTLz ~ LogDurZ +
  #                         outcode*task +
   #                     outcode*prec.seg +
    #                      outcode*following +
-    #                   (1 + LogDurZ + prec.seg + following + task | participant) + 
-     #                (1|word), data = face_ad_tl_studio,
+    #                   (1 + prec.seg + following + task | participant) + 
+     #                (1|word), data = face_ad_studio,
       #               prior = my_priors3,
        #              control = list(adapt_delta = 0.99),
-        #    cores=2,
-         #   sample_prior = TRUE,
-          #  file="models_new/face_ad_st_tl_m1")
-
-#goat_ad_st_f2_m1 <- brm(normF2_20z ~ LogDurZ +
- #                         outcode*task +
-  #                     outcode*prec.seg +
-   #                      outcode*following +
-    #                   (1 + LogDurZ + prec.seg + following + task | participant) + 
-     #                (1 + outcode|word), data = goat_ad_studio,
-      #               prior = my_priors3,
-       #              control = list(adapt_delta = 0.99),
-        #    cores=2,
-         #   file="models_new/goat_ad_st_f2_m1")
+        #    file="models/face_ad_st_tl_m1")
 ```
 ### Load model
 ```{r}
-face_ad_st_tl_m1 <- read_rds("models_new/face_ad_st_tl_m1.rds")
+face_ad_st_tl_m1 <- read_rds("models/face_ad_st_tl_m1.rds")
 ```
 
 ### PP check
@@ -2638,23 +2112,10 @@ Bit lumpy and bumpy.
 ```{r}
 (face_ad_st_tl_sum <- parameters::model_parameters(face_ad_st_tl_m1, ci=0.95, ci_method="hdi", effects="fixed"))
 ```
-```{r}
-(face_ad_st_tl_sum <- face_ad_st_tl_sum %>% mutate(
-  Median = round(Median, 2),
-  CI_low = round(CI_low, 2),
-  CI_high = round(CI_high, 2),
-  pd = round(pd, 2),
-  ROPE_Percentage = round(ROPE_Percentage, 2),
-  Rhat = round(Rhat, 2)
-))
-```
-Write to csv:
-```{r}
-face_ad_st_tl_sum %>% write_csv("sumtabs_new/face_ad_st_tl_sum.csv")
-```
+
 ### Stanplot
 
-```{r fig.height=10}
+```{r}
 stanplot(face_ad_st_tl_m1, type="intervals",  pars = "^b", prob = 0.9, prob_outer=0.95)
 ```
 
@@ -2680,9 +2141,6 @@ face_ad_st_tl_m1 %>%
         strip.text=element_text(size=rel(1.1))) #+ scale_y_reverse()
 ```
 
-```{r}
-contrasts(face_ad2$prec.seg)
-```
 
 ```{r}
 emmeans(face_ad_st_tl_m1, ~ prec.seg)
@@ -2729,9 +2187,7 @@ face_ad_st_tl_m1 %>%
         axis.title.y = element_text(size=rel(1.1)),
         strip.text=element_text(size=rel(1.1)))
 ```
-```{r}
-contrasts(face_ad2$following)
-```
+
 
 ```{r}
 emmeans(face_ad_st_tl_m1, ~ following)
@@ -2749,7 +2205,7 @@ hypothesis(face_ad_st_tl_m1, "following4 > 0", alpha=0.025)
 hypothesis(face_ad_st_tl_m1, "(Intercept - (following1 + following2 + following3 + following4 )) > 0", alpha=0.025)
 ```
 
-Interaction of CofP and preceding velar:
+Interaction of outcode and following voiceless:
 ```{r}
 hypothesis(face_ad_st_tl_m1, "outcode1:following1 > 0", alpha=0.025)
 hypothesis(face_ad_st_tl_m1, "outcode1:following2 > 0", alpha=0.025)
@@ -2760,18 +2216,7 @@ hypothesis(face_ad_st_tl_m1, "(Intercept - (outcode1:following1 + outcode1:follo
 ```
 
 ### Random intercepts
-Plot these intervals:
-```{r fig.height=20}
-face_ad_st_tl_m1 %>%
-  spread_draws(b_Intercept, r_word[word,term]) %>%
-  #head(10)
-  filter(term == "Intercept") %>% 
-  mutate(word_median = r_word) %>%
-  #median_hdi(participant_median = b_Intercept + r_participant) %>%
-  ggplot(aes(y = word, x = word_median)) +
-  geom_halfeyeh(point_interval=median_hdi, .width=0.95) + geom_vline(xintercept=0, lty=2, color="red")
-```
-There are some multimodal ones! Exciting.
+
 
 Participant random intercepts
 ```{r}
@@ -2786,717 +2231,16 @@ face_ad_st_tl_m1 %>%
 ```
 So Daniel is the most monophthongal.
 
-
-
-# Adolescent-child comparison: F1
-```{r}
-str(face6)
-```
-
-What we need to do:
-
-- Exclude outcode 3 adolescents
-
-- Model using *normalized* formant values
-
-- Figure out what plots make the most sense
-
-Variables for the model:
-
-- age: adolescent or child
-
-- sex: male or female
-
-- preceding segment
-
-- following environment
-
-- log(duration)
-
-## Exclude outcode 3
-```{r}
-face6 %>% filter(age=="adolescent") %>% group_by(outcode) %>% summarise(unicorn=n())
-```
-
-
-```{r}
-face7 <- face6 %>% filter(
-  age=="child" |
-    age=="adolescent" & outcode !="3"
-)
-```
-
-
-## EDA
-
-Checklist:
-
-- ~should be no coda nasal or approximant~
-
-- ~no preceding nasal or approximant~
-
-- check frequent words
-
-- outliers, for all timepoints, both F1 and F2
-
-- check language-internal factors
-
-- check language-external factors
-
-### frequent words
-Check which words are most frequent
-```{r}
-face7 %>% 
-  group_by(word) %>% 
-  summarise(number = n()) %>% 
-  arrange(desc(number))
-```
-
-### Outliers
-```{r}
-ggplot(face7, aes(x=normF1_20))+geom_histogram(bins=100)+theme_minimal()+ 
-  geom_vline(xintercept=mean(face7$normF1_20)+3*sd(face7$normF1_20)) + 
-  geom_vline(xintercept=mean(face7$normF1_20)-3*sd(face7$normF1_20))
-
-ggplot(face7, aes(x=normF1_35))+geom_histogram(bins=100)+theme_minimal()+ 
-  geom_vline(xintercept=mean(face7$normF1_35)+3*sd(face7$normF1_35)) + 
-  geom_vline(xintercept=mean(face7$normF1_35)-3*sd(face7$normF1_35))
-
-ggplot(face7, aes(x=normF1_50))+geom_histogram(bins=100)+theme_minimal()+ 
-  geom_vline(xintercept=mean(face7$normF1_50)+3*sd(face7$normF1_50)) + 
-  geom_vline(xintercept=mean(face7$normF1_50)-3*sd(face7$normF1_50))
-
-ggplot(face7, aes(x=normF1_65))+geom_histogram(bins=100)+theme_minimal()+ 
-  geom_vline(xintercept=mean(face7$normF1_65)+3*sd(face7$normF1_65)) + 
-  geom_vline(xintercept=mean(face7$normF1_65)-3*sd(face7$normF1_65))
-
-ggplot(face7, aes(x=normF1_80))+geom_histogram(bins=100)+theme_minimal()+ 
-  geom_vline(xintercept=mean(face7$normF1_80)+3*sd(face7$normF1_80)) + 
-  geom_vline(xintercept=mean(face7$normF1_80)-3*sd(face7$normF1_80))
-
-ggplot(face7, aes(x=normF2_20))+geom_histogram(bins=100)+theme_minimal()+ 
-  geom_vline(xintercept=mean(face7$normF2_20)+3*sd(face7$normF2_20)) + 
-  geom_vline(xintercept=mean(face7$normF2_20)-3*sd(face7$normF2_20))
-
-ggplot(face7, aes(x=normF2_35))+geom_histogram(bins=100)+theme_minimal()+ 
-  geom_vline(xintercept=mean(face7$normF2_35)+3*sd(face7$normF2_35)) + 
-  geom_vline(xintercept=mean(face7$normF2_35)-3*sd(face7$normF2_35))
-
-ggplot(face7, aes(x=F2_50))+geom_histogram(bins=100)+theme_minimal()+ 
-  geom_vline(xintercept=mean(face7$F2_50)+3*sd(face7$F2_50)) + 
-  geom_vline(xintercept=mean(face7$F2_50)-3*sd(face7$F2_50))
-
-ggplot(face7, aes(x=normF2_65))+geom_histogram(bins=100)+theme_minimal()+ 
-  geom_vline(xintercept=mean(face7$normF2_65)+3*sd(face7$normF2_65)) + 
-  geom_vline(xintercept=mean(face7$normF2_65)-3*sd(face7$normF2_65))
-
-ggplot(face7, aes(x=normF2_80))+geom_histogram(bins=100)+theme_minimal()+ 
-  geom_vline(xintercept=mean(face7$normF2_80)+3*sd(face7$normF2_80)) + 
-  geom_vline(xintercept=mean(face7$normF2_80)-3*sd(face7$normF2_80))
-```
-
-Actually, we already got rid of outliers at an earlier stage, so I will just leave these as they are for now.
-### Duration
-
-```{r}
-ggplot(face7, aes(x=duration))+geom_histogram(bins=100)+theme_minimal()+
-  geom_vline(xintercept=mean(face7$duration)+3*sd(face7$duration)) + 
-  geom_vline(xintercept=mean(face7$duration)-3*sd(face7$duration))
-
-ggplot(face7, aes(x=LogDur))+geom_histogram(bins=100)+theme_minimal()+
-  geom_vline(xintercept=mean(face7$LogDur)+3*sd(face7$LogDur)) + 
-  geom_vline(xintercept=mean(face7$LogDur)-3*sd(face7$LogDur))
-```
-Get rid of durations greater than 0.4:
-```{r}
-face8 <- face7 %>% filter(
-  duration < 0.4
-)
-```
-
-
-### Create social factors
-The social factors we need are:
-
-- age
-
-- sex
-
-```{r}
-colnames(face8)
-```
-```{r}
-table(face8$age)
-```
-
-
-Create the sex variable:
-```{r}
-levels(face8$participant)
-
-ch_f <- c("F1",
-          "F10",
-          "F3",
-          "F4",
-          "F7",
-          "F8",
-          "F9")
-```
-Now make the variable:
-```{r}
-face8 <- face8 %>% mutate(
-  sex = ifelse(participant %in% ad_f, "F",
-               ifelse(participant %in% ch_f, "F", "M"))
-)
-```
-
-Check how it worked
-```{r}
-table(face8$sex)
-```
-Good.
-
-### Create lang-internal factors
-The lang-internal factors we need are:
-
-- preceding environment
-
-- following environment
-
-```{r}
-colnames(face8)
-```
-
-```{r}
-table(face8$age, face8$prec.seg)
-
-table(face8$age, face8$following)
-```
-
-Can relevel preceding segment to put "other" and "vowel" together.
-## Modelling
-We need to:
-
-- exclude wordlist data
-
-- sum-code factors
-
-- set priors
-
-- z-score the continuous variables
-
-### Task
-```{r}
-table(face8$task)
-```
-```{r}
-face9 <- face8 %>% filter(age=="child" |
-                            age=="adolescent" & task != "wordlist")
-```
-
-### Age
-```{r}
-face9$age <- factor(face9$age)
-table(face9$age)
-contrasts(face9$age) <- contr.sum(2)
-contrasts(face9$age)
-```
-
-```{r}
-ggplot(face9, aes(x=age, y=normF1_20))+geom_boxplot()
-```
-
-### Sex
-```{r}
-table(face9$sex)
-```
-```{r}
-ggplot(face9, aes(x=sex, y=normF1_20))+geom_boxplot()
-```
-
-```{r}
-face9$sex <- factor(face9$sex)
-table(face9$sex)
-contrasts(face9$sex) <- contr.sum(2)
-contrasts(face9$sex)
-```
-
-### Prec.seg
-```{r}
-table(face9$age, face9$prec.seg)
-```
-
-Relevel this factor:
-```{r}
-levels(face9$prec.seg) <- c("approx.glide",
-                               "coronal",
-                               "labial",
-                               "nasal",
-                               "other",
-                               "velar",
-                               "other",
-                               "other")
-```
-
-
-
-```{r}
-ggplot(face9, aes(x=prec.seg, y=normF1_20))+geom_boxplot()
-```
-
-```{r}
-face9$prec.seg <- factor(face9$prec.seg)
-table(face9$prec.seg)
-contrasts(face9$prec.seg) <- contr.sum(6)
-contrasts(face9$prec.seg)
-```
-
-### Fol.env
-```{r}
-table(face9$age, face9$following)
-```
-```{r}
-ggplot(face9, aes(x=following, y=normF1_20))+geom_boxplot()
-```
-
-
-```{r}
-face9$following <- factor(face9$following)
-table(face9$following)
-contrasts(face9$following) <- contr.sum(5)
-contrasts(face9$following)
-```
-### set priors
-Get range of the dependent variable:
-```{r}
-summary(face9$normF1_20)
-max(face9$normF1_20)-min(face9$normF1_20)
-sd(face9$normF1_20)
-```
-
-```{r}
-my_priors3 <- c(
-  set_prior("normal(0, 3)", class = "Intercept"), # intercept
-  set_prior("normal(0, 3)", class = "b"), # beta
-  #set_prior("normal(0, 1)", class = "sd"), # st. dev. of random effects
-  #set_prior("normal(0, 1)", class = "sigma"), # sigma (overall error)
-  set_prior("lkj(2)", class = "cor") # random effects correlation matrix
-)
-#Defaults:
-#lkj(1) - cor
-#student_t(3, 0, 10) Intercept
-#student_t(3, 0, 10) sd
-# student_t(3, 0, 10) sigma
-```
-
-#### Check for outliers
-```{r}
-ggplot(face9, aes(x=normF1_20))+geom_histogram(bins=100) +theme_minimal()
-```
-
-It's a bit skewed...
-```{r}
-face10 <- face9 %>% filter(
-  normF1_20 < 1.45
-)
-```
-
-Plot again
-```{r}
-ggplot(face10, aes(x=normF1_20))+geom_histogram(bins=100) +theme_minimal()
-```
-
-### z-score the continuous variables
-
-```{r}
-face10 <- face10 %>% mutate(
-  LogDurZ = scale(LogDur, center = TRUE),
-  normF1_20z = scale(normF1_20, center = TRUE)
-)
-```
-
-Plot these to check it worked:
-```{r}
-
-#ggplot(face_ch2, aes(x=F1_20z))+geom_histogram()+theme_minimal() + geom_vline(xintercept=2) + geom_vline(xintercept=-2)
-ggplot(face10, aes(x=normF1_20))+geom_histogram()+theme_minimal()
-ggplot(face10, aes(x=normF1_20z))+geom_histogram()+theme_minimal() + geom_vline(xintercept=2) + geom_vline(xintercept=-2)
-```
-Looks OK.
-
-### Run the model
-
-
-```{r}
-#face_adch_f1_m2 <- brm(normF1_20z ~ LogDurZ +
- #                        age*prec.seg +
-  #                         age*following +
-   #                      age*sex +
-    #                   (1 + prec.seg + following| participant) + 
-     #                (1 + age + sex|word), data = face10,
-      #prior = my_priors3,
-      #               control = list(adapt_delta = 0.99),
-       #     cores=2,
-      #sample_prior = TRUE,
-       #     file="models_new/face_adch_f1_m2")
-
-
-```
-
-### Load model
-```{r}
-face_adch_f1_m2 <- read_rds("models_new/face_adch_f1_m2.rds")
-```
-
-
-### PP check
-```{r}
-pp_check(face_adch_f1_m2, nsamples=100)
-```
-### Model summary
-```{r}
-tidy_stan(face_adch_f1_m2, prob=0.95)
-```
-
-
-
-### Stanplot
-
-```{r}
-stanplot(face_adch_f1_m2, type="intervals",  pars = "^b", prob = 0.9, prob_outer=0.95)
-```
-Interesting. So it seems like age has an effect and there are strong prec/fol environment effects.
-
-## Plots
-
-### Prec seg
-```{r}
-face_adch_f1_m2 %>%
-  emmeans( ~ prec.seg | age) %>%
-  gather_emmeans_draws() %>%
-  ggplot(aes(x = reorder(prec.seg, .value, median), y = .value, fill=age)) +
-  geom_eye(.width = c(.95)) +
-  stat_summary(aes(group = age), fun.y = median, geom = "line") +
-  facet_grid(~ age) +
-  theme_light() + 
-  scale_fill_manual(values = c("gray80", "skyblue"))+xlab(NULL) + #ylab("F2 z-score")+
-  theme(legend.position="none",
-        axis.text.x = element_text(size=rel(1.1), angle=45, hjust=1),
-        axis.text = element_text(size=rel(1.1)),
-        strip.text=element_text(size=rel(1.1)))
-```
-```{r}
-emmeans(face_adch_f1_m2, ~prec.seg | age)
-```
-
-
-
-```{r}
-face_adch_f1_m2 %>%
-  emmeans( ~ prec.seg | age) %>%
-  #contrast(method = "pairwise") %>%
-  gather_emmeans_draws() %>% 
-  mutate(
-    high.low = ifelse(.value > 0, "above", "below")
-  ) %>% group_by(age, prec.seg, high.low) %>% summarise(n=n()) %>% mutate(prop=n/sum(n))
-
-#contrasts(face_ch4$prec.seg)
-```
-
-
-
-```{r}
-hypothesis(face_ch_tl_m2, "prec.seg1 > 0", alpha = 0.025)
-hypothesis(face_ch_tl_m2, "prec.seg2 > 0", alpha = 0.025)
-hypothesis(face_ch_tl_m2, "prec.seg3 > 0", alpha = 0.025)
-hypothesis(face_ch_tl_m2, "prec.seg4 > 0", alpha = 0.025)
-hypothesis(face_ch_tl_m2, "prec.seg5 > 0", alpha = 0.025)
-hypothesis(face_ch_tl_m2, "(Intercept - (prec.seg1 + prec.seg2 + prec.seg3 + prec.seg4 +prec.seg5))> 0", alpha = 0.025)
-```
-Vs. interaction term:
-```{r}
-hypothesis(face_ch_tl_m2, "year1:prec.seg1 > 0", alpha = 0.025)
-hypothesis(face_ch_tl_m2, "year1:prec.seg2 > 0", alpha = 0.025)
-hypothesis(face_ch_tl_m2, "year1:prec.seg3 > 0", alpha = 0.025)
-hypothesis(face_ch_tl_m2, "year1:prec.seg4 > 0", alpha = 0.025)
-hypothesis(face_ch_tl_m2, "year1:prec.seg5 > 0", alpha = 0.025)
-hypothesis(face_ch_tl_m2, "(Intercept - (year1:prec.seg1 + year1:prec.seg2 + year1:prec.seg3 + year1:prec.seg4 + year1:prec.seg5))> 0", alpha = 0.025)
-```
-
-```{r}
-emmeans(face_ch_tl_m2, ~ prec.seg)
-```
-
-
-
-
-Check interaction with year:
-```{r}
-emmip(face_ch_tl_m2, ~ prec.seg | year, CIs=TRUE)
-```
-
-
-
-
-### Following
-```{r}
-face_adch_f1_m2 %>%
-  emmeans( ~ following | age) %>%
-  gather_emmeans_draws() %>%
-  ggplot(aes(x = reorder(following, .value, median), y = .value, fill=age)) +
-  geom_eye(.width = c(.95)) +
-  stat_summary(aes(group = age), fun.y = median, geom = "line") +
-  facet_grid(~ age) +
-  theme_light() + 
-  scale_fill_manual(values = c("gray80", "skyblue"))+xlab(NULL) + #ylab("F2 z-score")+
-  theme(legend.position="none",
-        axis.text.x = element_text(size=rel(1.1), angle=45, hjust=1),
-        axis.text = element_text(size=rel(1.1)),
-        strip.text=element_text(size=rel(1.1)))
-```
-Emmeans
-```{r}
-emmeans(face_adch_f1_m2, ~ following | age)
-```
-
-
-Probabilities
-```{r}
-face_adch_f1_m2 %>%
-  emmeans( ~ following | age) %>%
-  #contrast(method = "pairwise") %>%
-  gather_emmeans_draws() %>% 
-  mutate(
-    high.low = ifelse(.value > 0, "above", "below")
-  ) %>% group_by(age, following, high.low) %>% summarise(n=n()) %>% mutate(prop=n/sum(n))
-
-#contrasts(face_ch4$prec.seg)
-```
-
-### Age
-```{r}
-emmeans(face_adch_f1_m2, pairwise ~ age)
-```
-
-```{r}
-emmip(face_adch_f1_m2, ~ age, CIs = TRUE)
-```
-The adolescents seem to have a way higher F1 than the children - so children are leading in this change (if it is a change).
-
-Get probability
-```{r}
-#emmeans(face_ch_tl_m2, pairwise ~  year)
-
-face_adch_f1_m2 %>%
-  emmeans( ~ age) %>%
-  contrast(method = "pairwise") %>%
-  gather_emmeans_draws() %>% 
-  mutate(
-    high.low = ifelse(.value > 0, "above", "below")
-  ) %>% group_by(high.low) %>% summarise(n=n()) %>% mutate(prop=n/sum(n))
-
-hypothesis(face_adch_f1_m2, "age1 > 0", alpha = 0.025)
-```
-### Sex
-
-```{r}
-emmip(face_adch_f1_m2, ~ sex, CIs = TRUE)
-emmip(face_adch_f1_m2, ~ sex | age, CIs = TRUE)
-```
-
-
-Get probability
-```{r}
-face_adch_f1_m2 %>%
-  emmeans( ~ sex) %>%
-  contrast(method = "pairwise") %>%
-  gather_emmeans_draws() %>% 
-  mutate(
-    high.low = ifelse(.value > 0, "above", "below")
-  ) %>% group_by(high.low) %>% summarise(n=n()) %>% mutate(prop=n/sum(n))
-
-face_adch_f1_m2 %>%
-  emmeans( ~ sex | age) %>%
-  contrast(method = "pairwise") %>%
-  gather_emmeans_draws() %>% 
-  mutate(
-    high.low = ifelse(.value > 0, "above", "below")
-  ) %>% group_by(age, high.low) %>% summarise(n=n()) %>% mutate(prop=n/sum(n))
-```
-
-
-```{r}
-emmeans(face_adch_f1_m2, pairwise ~  sex | age)
-#emmeans(face_ch_tl_m2, pairwise ~  sex)
-
-#hypothesis(face_ch_tl_m2, "sex1 > 0", alpha = 0.025)
-hypothesis(face_adch_f1_m2, "age1:sex1 > 0", alpha = 0.025)
-```
-
-```{r}
-
-```
-
-
-# Adolescent-child FACE TL
-## Modelling
-
-We need to:
-
-- ~~exclude wordlist data~~
-
-- sum-code factors
-
-- set priors
-
-- z-score the continuous variables
-
-### Log(TL)
-```{r}
-face10 <- face10 %>% mutate(
-  LogTL = log(norm_TL)
-)
-```
-
-### Age
-```{r}
-face10$age <- factor(face10$age)
-table(face10$age)
-contrasts(face10$age) <- contr.sum(2)
-contrasts(face10$age)
-```
-
-```{r}
-ggplot(face10, aes(x=age, y=LogTL, fill=sex))+geom_boxplot()
-```
-
-### Sex
-```{r}
-table(face10$sex)
-```
-```{r}
-ggplot(face10, aes(x=sex, y=LogTL))+geom_boxplot()
-```
-
-```{r}
-face10$sex <- factor(face10$sex)
-table(face10$sex)
-contrasts(face10$sex) <- contr.sum(2)
-contrasts(face10$sex)
-```
-
-### Prec.seg
-```{r}
-table(face10$age, face10$prec.seg)
-```
-
-
-
-```{r}
-ggplot(face10, aes(x=prec.seg, y=LogTL))+geom_boxplot()
-```
-
-```{r}
-face10$prec.seg <- factor(face10$prec.seg)
-table(face10$prec.seg)
-contrasts(face10$prec.seg) <- contr.sum(6)
-contrasts(face10$prec.seg)
-```
-
-### Fol.env
-```{r}
-table(face10$age, face10$following)
-```
-```{r}
-ggplot(face10, aes(x=following, y=LogTL))+geom_boxplot()
-```
-
-
-```{r}
-face10$following <- factor(face10$following)
-table(face10$following)
-contrasts(face10$following) <- contr.sum(5)
-contrasts(face10$following)
-```
-### set priors
-Get range of the dependent variable:
-```{r}
-summary(face10$LogTL)
-max(face10$LogTL)-min(face10$LogTL)
-sd(face10$LogTL)
-```
-
-```{r}
-my_priors3 <- c(
-  set_prior("normal(0, 3)", class = "Intercept"), # intercept
-  set_prior("normal(0, 3)", class = "b"), # beta
-  #set_prior("normal(0, 1)", class = "sd"), # st. dev. of random effects
-  #set_prior("normal(0, 1)", class = "sigma"), # sigma (overall error)
-  set_prior("lkj(2)", class = "cor") # random effects correlation matrix
-)
-#Defaults:
-#lkj(1) - cor
-#student_t(3, 0, 10) Intercept
-#student_t(3, 0, 10) sd
-# student_t(3, 0, 10) sigma
-```
-
-#### Check for outliers
-```{r}
-ggplot(face10, aes(x=LogTL))+geom_histogram(bins=100) +theme_minimal()
-```
-
-It's OK for now
-### z-score the continuous variables
-
-```{r}
-face11 <- face10 %>% mutate(
-  LogDurZ = scale(LogDur, center = TRUE),
-  LogTLz = scale(LogTL, center = TRUE)
-)
+Word random intercepts, using the "frequent words" vector we created earlier:
+```{r}
+face_ad_st_tl_m1 %>%
+  spread_draws(b_Intercept, r_word[word,term]) %>%
+  filter(word %in% face_fr_words) %>% 
+  #head(10)
+  filter(term == "Intercept") %>% 
+  mutate(word_median = r_word) %>%
+ # median_hdi(participant_median = b_Intercept + r_participant) %>%
+  ggplot(aes(y = reorder(word, word_median), x = word_median)) +
+  geom_halfeyeh(point_interval=median_hdi, .width=0.95) + geom_vline(xintercept=0, lty=2, color="red")
 ```
-
-Plot these to check it worked:
-```{r}
-ggplot(face10, aes(x=LogTL))+geom_histogram()+theme_minimal()
-ggplot(face11, aes(x=LogTLz))+geom_histogram()+theme_minimal() + geom_vline(xintercept=2) + geom_vline(xintercept=-2)
-```
-Looks OK.
-
-### Run the model
-
-```{r}
-face_adch_tl_m1 <- brm(LogTLz ~ LogDurZ +
-                         age*prec.seg +
-                           age*following +
-                         age*sex +
-                       (1 + prec.seg + following| participant) + 
-                     (1 + age + sex|word), data = face11,
-      prior = my_priors3,
-                     control = list(adapt_delta = 0.99),
-            cores=2,
-      sample_prior = TRUE,
-            file="models_new/face_adch_tl_m1")
-
-```
-
-### PP check
-```{r}
-pp_check(face_adch_tl_m1, nsamples=100)
-```
-### Model summary
-```{r}
-tidy_stan(face_adch_tl_m1, prob=0.95)
-```
-
-
-
-### Stanplot
-
-```{r}
-stanplot(face_adch_tl_m1, type="intervals",  pars = "^b", prob = 0.95, prob_outer=0.95)
-```
-
-##
 
-xx
