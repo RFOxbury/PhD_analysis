@@ -1,0 +1,2239 @@
+---
+title: "Variation in the FACE vowel in the adolescent data"
+author: "Rosie Oxbury"
+date: "April 2020"
+output:
+  html_notebook:
+    number_sections: yes
+    toc: yes
+    toc_depth: 3
+    toc_float: yes
+  pdf_document:
+    toc: yes
+    toc_depth: '3'
+---
+Load the packages we will need:
+```{r}
+library(tidyverse)
+library(brms)
+library(sjstats)
+library(bayesplot)
+library(bayestestR)
+library(emmeans)
+library(cowplot)
+library(tidybayes)
+```
+
+
+Load the adolescent FACE data. Import "data_separated/face_ad.csv"
+```{r}
+face_ad <- read_csv("data_separated/face_ad.csv")
+```
+
+# EDA
+Checklist:
+
+- check for NAs
+
+- outliers, for all timepoints, both F1 and F2
+
+- ~~should be no coda nasal or approximant~~
+
+- relevel preceding segment
+
+- ~~no preceding nasal or approximant~~
+
+- relevel following segment
+
+- check frequent words
+
+Check for NAs first
+```{r}
+norm_formants <- c("normF1_20",
+                   "normF1_35",
+                   "normF1_50",
+                   "normF1_65",
+                   "normF1_80",
+                   "normF2_20",
+                   "normF2_35",
+                   "normF2_50",
+                   "normF2_65",
+                   "normF2_80"
+                   )
+
+face_ad %>% filter_at(vars(norm_formants), any_vars(is.na(.)))
+```
+
+No NAs -- good.
+
+Outliers
+
+```{r}
+ggplot(face_ad, aes(x=normF1_20))+geom_histogram(bins=100)+theme_minimal() + 
+  geom_vline(xintercept=mean(face_ad$normF1_20)+3*sd(face_ad$normF1_20)) + 
+  geom_vline(xintercept=mean(face_ad$normF1_20)-3*sd(face_ad$normF1_20))
+
+ggplot(face_ad, aes(x=normF1_35))+geom_histogram(bins=100)+theme_minimal() + 
+  geom_vline(xintercept=mean(face_ad$normF1_35)+3*sd(face_ad$normF1_35)) + 
+  geom_vline(xintercept=mean(face_ad$normF1_35)-3*sd(face_ad$normF1_35))
+
+ggplot(face_ad, aes(x=normF1_50))+geom_histogram(bins=100)+theme_minimal() +
+  geom_vline(xintercept=mean(face_ad$normF1_50)+3*sd(face_ad$normF1_50)) + 
+  geom_vline(xintercept=mean(face_ad$normF1_50)-3*sd(face_ad$normF1_50))
+
+ggplot(face_ad, aes(x=normF1_65))+geom_histogram(bins=100)+theme_minimal() + 
+  geom_vline(xintercept=mean(face_ad$normF1_65)+3*sd(face_ad$normF1_65)) + 
+  geom_vline(xintercept=mean(face_ad$normF1_65)-3*sd(face_ad$normF1_65))
+
+ggplot(face_ad, aes(x=normF1_80))+geom_histogram(bins=100)+theme_minimal() + 
+  geom_vline(xintercept=mean(face_ad$normF1_80)+3*sd(face_ad$normF1_80)) + 
+  geom_vline(xintercept=mean(face_ad$normF1_80)-3*sd(face_ad$normF1_80))
+
+# F2
+ggplot(face_ad, aes(x=normF2_20))+geom_histogram(bins=100)+theme_minimal() + 
+  geom_vline(xintercept=mean(face_ad$normF2_20)+3*sd(face_ad$normF2_20)) + 
+  geom_vline(xintercept=mean(face_ad$normF2_20)-3*sd(face_ad$normF2_20))
+
+ggplot(face_ad, aes(x=normF2_35))+geom_histogram(bins=100)+theme_minimal() + 
+  geom_vline(xintercept=mean(face_ad$normF2_35)+3*sd(face_ad$normF2_35)) + 
+  geom_vline(xintercept=mean(face_ad$normF2_35)-3*sd(face_ad$normF2_35))
+
+ggplot(face_ad, aes(x=normF2_50))+geom_histogram(bins=100)+theme_minimal() +
+  geom_vline(xintercept=mean(face_ad$normF2_50)+3*sd(face_ad$normF2_50)) + 
+  geom_vline(xintercept=mean(face_ad$normF2_50)-3*sd(face_ad$normF2_50))
+
+ggplot(face_ad, aes(x=normF2_65))+geom_histogram(bins=100)+theme_minimal() + 
+  geom_vline(xintercept=mean(face_ad$normF2_65)+3*sd(face_ad$normF2_65)) + 
+  geom_vline(xintercept=mean(face_ad$normF2_65)-3*sd(face_ad$normF2_65))
+
+ggplot(face_ad, aes(x=normF2_80))+geom_histogram(bins=100)+theme_minimal() + 
+  geom_vline(xintercept=mean(face_ad$normF2_80)+3*sd(face_ad$normF2_80)) + 
+  geom_vline(xintercept=mean(face_ad$normF2_80)-3*sd(face_ad$normF2_80))
+```
+There are a couple of obvious outliers in (a) normF1_50 and (b) normF1_80.
+```{r}
+face2 <- face_ad %>% filter(
+  normF1_50 < 2,
+  normF1_80 < 2
+)
+```
+
+### relevel following segment
+
+```{r}
+table(face2$syl.type)
+```
+```{r}
+face2 %>% filter(syl.type=="either") %>% group_by(word) %>% summarise(unicorn=n()) %>% arrange(desc(unicorn))
+```
+
+```{r}
+face2 <- face2 %>% mutate(
+  syl.type2 = ifelse(
+    syl.type=="closed", "closed",
+    ifelse(
+      syl.type=="coda.nasal", "coda.nasal",
+      ifelse(
+        syl.type=="final.open", "final.open",
+        ifelse(syl.type=="medial.open", "medial.open",
+               ifelse(syl.type=="either" & word=="OKAY", "final.open",
+                      ifelse(
+                        syl.type=="either" & word=="DAYLIGHT", "medial.open", "other"
+                        )
+                      )))
+      )
+    )
+  )
+```
+
+Check how this worked:
+```{r}
+table(face2$syl.type)
+table(face2$syl.type2)
+```
+
+Find out what the relevant coda segments are:
+```{r}
+closed_face <- face2 %>% filter(syl.type2=="closed")
+
+closed_face$fol.phonOLOG.seg <- as.factor(closed_face$fol.phonOLOG.seg)
+
+table(droplevels(closed_face$fol.phonOLOG.seg))
+```
+
+Define vectors according to voicing/manner:
+```{r}
+voiced <-  c("d",  "dz", "dʒ", "v", "vd", "vr", "z", "zd")
+voiceless <- c("f", "k", "ks", "p", "pt", "s", "st", "t", "ts", "tʃ", "tθ")
+nasal <- c("nd")
+other <- c("?")
+```
+
+Create the variable:
+```{r}
+face3 <- face2 %>% mutate(
+  following = ifelse(
+    syl.type2 =="coda.nasal", "coda.nasal",
+    ifelse(
+      syl.type2=="final.open", "final.open",
+      ifelse(
+        syl.type2=="medial.open", "medial.open",
+        ifelse(
+          syl.type2=="closed" & fol.phonOLOG.seg %in% voiced,
+          "voiced",
+          ifelse(
+            syl.type2=="closed" & fol.phonOLOG.seg %in% voiceless,
+            "voiceless",
+            ifelse(
+              syl.type2=="closed" & fol.phonOLOG.seg %in% nasal, "coda.nasal", "other"
+            )
+          )
+        )
+      )
+    )
+  )
+)
+```
+
+Check the output
+```{r}
+table(face3$following)
+```
+Filter out "other":
+
+```{r}
+face4 <- face3 %>% filter(following!="other")
+```
+Lovely.
+### Relevel preceding segment
+```{r}
+table(face4$prec.seg)
+```
+
+I'll probably put other, vowel and zero together.
+
+
+### Check frequent words
+Check which words are most frequent
+```{r}
+face4 %>% 
+  group_by(word) %>% 
+  summarise(number = n()) %>% 
+  arrange(desc(number))
+```
+Leaving all these as they are for now.
+### Log-transform duration
+
+Check distribution:
+```{r}
+ggplot(face4, aes(x=duration))+geom_histogram(bins=100)+theme_minimal()
+```
+
+Taking the natural log, cos that's what other studies do and say is standard.
+```{r}
+face4 <- face4 %>% mutate(
+  LogDur = log(duration)
+)
+```
+
+Check that it worked:
+```{r}
+ggplot(face4, aes(x=duration))+geom_histogram(bins=100)+theme_minimal()
+ggplot(face4, aes(x=LogDur))+geom_histogram(bins=100)+theme_minimal()
+```
+Great.
+
+# Analysis: FACE: adolescents: F1
+
+## Initial model - comparing CofPs
+
+### EDA
+Check whether F1 is different by outcode, sex, CofP, ethnicity, and also by following seg, preceding seg.
+
+Questions to address:
+
+- Does it look like preceding environment has an effect on F1?
+
+- Does it look like following environment has an effect on F1?
+
+```{r}
+ggplot(face4, aes(x=following, y=normF1_20, fill=sex)) + geom_boxplot() +
+  theme_minimal() + scale_y_reverse()
+
+ggplot(face4, aes(x=following, y=normF1_20)) + geom_boxplot() +
+  theme_minimal() + facet_wrap(~outcode) + scale_y_reverse()
+
+ggplot(face4, aes(x=following, y=normF1_20, fill=CofP)) + geom_boxplot() +
+  theme_minimal() + scale_y_reverse()
+
+ggplot(face4, aes(x=prec.seg, y=normF1_20, fill=sex)) + geom_boxplot() +
+  theme_minimal() + scale_y_reverse()
+
+ggplot(face4, aes(x=prec.seg, y=normF1_20)) + geom_boxplot() +
+  theme_minimal() + facet_wrap(~outcode) + scale_y_reverse()
+
+ggplot(face4, aes(x=prec.seg, y=normF1_20, fill=CofP)) + geom_boxplot() +
+  theme_minimal() + scale_y_reverse()
+```
+Kind of looks like there's no interesting variation!
+
+### Modelling
+We need to:
+
+- exclude wordlist data
+
+- sum-code factors
+
+- set priors
+
+- z-score the continuous variables
+
+#### Task
+```{r}
+table(face4$task)
+```
+Lump reading and wordlist together:
+```{r}
+face4$task <- as.factor(face4$task)
+levels(face4$task) <- c("interview", "read.speech", "read.speech")
+```
+
+
+#### sum-code factors
+
+The factors are: task, sex, CofP, outcode, following seg, prec.seg
+
+Dummy-code task and set reference to interview. This is because more than a thousand tokens are interview, and only 72 are reading!
+```{r}
+table(face4$task)
+face4$task <- as.factor(face4$task)
+face4$task <- relevel(face4$task, ref="interview")
+table(face4$task)
+```
+
+Sex:
+```{r}
+table(face4$sex)
+face4$sex <- as.factor(face4$sex)
+contrasts(face4$sex) <- contr.sum(2)
+contrasts(face4$sex)
+```
+CofP:
+```{r}
+table(face4$CofP)
+face4$CofP <- as.factor(face4$CofP)
+contrasts(face4$CofP) <- contr.sum(2)
+contrasts(face4$CofP)
+```
+Prec.seg:
+```{r}
+table(face4$prec.seg)
+face4$prec.seg <- as.factor(face4$prec.seg)
+#contrasts(goat_ad$prec.seg) <- contr.sum(8)
+#contrasts(goat_ad$prec.seg)
+```
+Relevel:
+```{r}
+levels(face4$prec.seg) <- c("approx.glide",
+                              "coronal",
+                              "labial",
+                              "nasal",
+                              "other",
+                              "velar",
+                              "other",
+                              "other" )
+```
+Carry on with prec.seg:
+```{r}
+table(face4$prec.seg)
+#face_ad$prec.seg <- as.factor(face_ad$prec.seg)
+contrasts(face4$prec.seg) <- contr.sum(6)
+contrasts(face4$prec.seg)
+```
+
+Frequent words in each category
+```{r}
+face4 %>% filter(prec.seg=="coronal") %>% group_by(word) %>% summarise(tokens = n()) %>% arrange(desc(tokens))
+face4 %>% filter(prec.seg=="nasal") %>% group_by(word) %>% summarise(tokens = n()) %>% arrange(desc(tokens))
+face4 %>% filter(prec.seg=="velar") %>% group_by(word) %>% summarise(tokens = n()) %>% arrange(desc(tokens))
+face4 %>% filter(prec.seg=="approx.glide") %>% group_by(word) %>% summarise(tokens = n()) %>% arrange(desc(tokens))
+```
+
+
+
+Following seg:
+
+```{r}
+table(face4$following)
+face4$following <- as.factor(face4$following)
+contrasts(face4$following) <- contr.sum(5)
+contrasts(face4$following)
+```
+
+```{r}
+str(face4)
+```
+
+```{r}
+table(face4$CofP)
+table(face4$sex)
+table(face4$outcode)
+table(face4$prec.seg)
+table(face4$following)
+```
+
+```{r}
+(tab <- face4 %>% 
+  group_by(CofP, sex, outcode, prec.seg) %>% 
+  summarise(counts = n()) %>% 
+  arrange(desc(counts)) %>% 
+  spread(prec.seg, counts)) #%>% 
+   #mutate(Total = coda.nasal+final.open+medial.open+voiced+voiceless)) #%>% 
+  #write_csv("phon_environment/children_face_following.csv"))
+
+(totals <- face4 %>% 
+  group_by(prec.seg) %>% 
+  summarise(counts = n()) %>% 
+  arrange(desc(counts)) %>% 
+  spread(prec.seg, counts))
+
+rbind(tab,totals) %>% 
+  rowwise() %>% 
+  mutate(Total = sum(c_across(approx.glide:velar), na.rm=TRUE)) %>% 
+  write_csv("phon_environment/adolescents_face_precseg.csv")
+```
+```{r}
+(tab <- face4 %>% 
+  group_by(CofP, sex, outcode, following) %>% 
+  summarise(counts = n()) %>% 
+  arrange(desc(counts)) %>% 
+  spread(following, counts)) #%>% 
+   #mutate(Total = coda.nasal+final.open+medial.open+voiced+voiceless)) #%>% 
+  #write_csv("phon_environment/children_face_following.csv"))
+
+(totals <- face4 %>% 
+  group_by(following) %>% 
+  summarise(counts = n()) %>% 
+  arrange(desc(counts)) %>% 
+  spread(following, counts))
+
+rbind(tab,totals) %>% 
+  rowwise() %>% 
+  mutate(Total = sum(c_across(coda.nasal:voiceless), na.rm=TRUE)) %>% 
+  write_csv("phon_environment/adolescents_face_following.csv")
+```
+
+Frequent words in each category
+```{r}
+face4 %>% filter(following=="coda.nasal") %>% group_by(word) %>% summarise(tokens = n()) %>% arrange(desc(tokens))
+face4 %>% filter(following=="medial.open") %>% group_by(word) %>% summarise(tokens = n()) %>% arrange(desc(tokens))
+face4 %>% filter(following=="voiced") %>% group_by(word) %>% summarise(tokens = n()) %>% arrange(desc(tokens))
+face4 %>% filter(following=="voiceless") %>% group_by(word) %>% summarise(tokens = n()) %>% arrange(desc(tokens))
+face4 %>% filter(following=="final.open") %>% group_by(word) %>% summarise(tokens = n()) %>% arrange(desc(tokens))
+```
+
+#### set priors
+Get range of the dependent variable:
+```{r}
+summary(face4$normF1_20)
+max(face4$normF1_20)-min(face4$normF1_20)
+sd(face4$normF1_20)
+```
+
+```{r}
+my_priors3 <- c(
+  set_prior("normal(0, 3)", class = "Intercept"), # intercept
+  set_prior("normal(0, 3)", class = "b"), # beta
+  #set_prior("normal(0, 1)", class = "sd"), # st. dev. of random effects
+  #set_prior("normal(0, 1)", class = "sigma"), # sigma (overall error)
+  set_prior("lkj(2)", class = "cor") # random effects correlation matrix
+)
+#Defaults:
+#lkj(1) - cor
+#student_t(3, 0, 10) Intercept
+#student_t(3, 0, 10) sd
+# student_t(3, 0, 10) sigma
+```
+
+#### Check for outliers
+```{r}
+ggplot(face4, aes(x=normF1_20))+geom_histogram(bins=100) +theme_minimal()
+```
+There are some tails - try to filter these out
+```{r}
+face5 <- face4 %>% filter(
+  normF1_20 > 0.6,
+  normF1_20 < 1.4
+)
+```
+Plot again:
+```{r}
+ggplot(face5, aes(x=normF1_20))+geom_histogram(bins=100) +theme_minimal()
+```
+
+### z-score the continuous variables
+
+```{r}
+face5 <- face5 %>% mutate(
+  normF1_20_c = normF1_20 - mean(normF1_20),
+  normF1_20_z = normF1_20_c / sd(normF1_20_c),
+  normF1_20z = scale(normF1_20, center = TRUE)
+)
+```
+
+Find what the mean is:
+```{r}
+mean(face5$normF1_20)
+```
+
+The standard deviation stays the same when you subtract the mean (the mean becomes 0, and all data points are the same distance from 0 as they were from the mean):
+```{r}
+sd(face5$normF1_20)
+sd(face5$normF1_20_c)
+```
+
+
+Check this:
+```{r}
+face5 %>% select(normF1_20, normF1_20_c, normF1_20_z, normF1_20z)
+```
+So a normF1_20 value of 0.93 is 0.52 standard deviations below the mean.
+
+Scale log(duration) as well:
+```{r}
+face5 <- face5 %>% mutate(
+  LogDur_c = LogDur - mean(LogDur),
+  LogDur_z = LogDur_c / sd(LogDur_c),
+  LogDurZ = scale(LogDur, center = TRUE)
+)
+```
+
+Check what the mean and standard deviation of log(dur) are:
+```{r}
+mean(face5$LogDur)
+sd(face5$LogDur)
+```
+Check the same way as before:
+```{r}
+face5 %>% select(duration, LogDur, LogDur_c, LogDur_z, LogDurZ)
+```
+
+Plot these to check it worked:
+```{r}
+ggplot(face5, aes(x=normF1_20))+geom_histogram()+theme_minimal()
+ggplot(face5, aes(x=normF1_20z))+geom_histogram()+theme_minimal() + geom_vline(xintercept=2) + geom_vline(xintercept=-2)
+
+ggplot(face5, aes(x=LogDur))+geom_histogram()+theme_minimal()
+ggplot(face5, aes(x=LogDurZ))+geom_histogram()+theme_minimal() + geom_vline(xintercept=2) + geom_vline(xintercept=-2)
+```
+Looks good.
+
+### Run the model
+Initial model with just CofP
+```{r}
+set.seed(56) #for reproducability
+#face_ad_f1_m1 <- brm(normF1_20z ~ LogDurZ +    #UNCOMMENT THESE LINES WHEN YOU NEED TO RUN THE MODEL
+ #                      CofP*prec.seg +
+  #                         CofP*following +
+   #                    (1 + prec.seg + following | participant) + 
+    #                 (1+ CofP|word), data = face5,
+     #                prior = my_priors3,
+      #               control = list(adapt_delta = 0.99),
+        #    file="models/face_ad_f1_m1")
+```
+
+### Load the model
+```{r}
+face_ad_f1_m1 <- read_rds("models/face_ad_f1_m1.rds")
+```
+
+
+### PP check
+```{r}
+pp_check(face_ad_f1_m1)
+```
+
+### Model summary
+```{r}
+(face_ad_f1_sum <- parameters::model_parameters(face_ad_f1_m1, ci=0.95, ci_method="hdi", effects="fixed"))
+```
+
+### Stanplot
+
+```{r}
+my_labels <- c("Intercept",
+               "log(duration)",
+               "CofP",
+               "prec=approx.glide",
+               "prec=coronal",
+               "prec=labial",
+               "prec=nasal",
+               "prec=other",
+               "fol=coda nasal",
+               "fol=word-final open",
+               "fol=word-medial open",
+               "fol=coda voiced",
+               "CofP * prec=approx.glide",
+               "CofP * prec=coronal",
+               "CofP * prec=labial",
+               "CofP * prec=nasal",
+               "CofP * prec=other",
+               "CofP * fol=coda nasal",
+               "CofP * fol=word-final open",
+               "CofP * fol=word-medial open",
+               "CofP * fol=coda voiced")
+```
+
+
+```{r}
+#mcmc_plot(face_ad_f1_m1, type="intervals",  pars = "^b", prob = 0.9, prob_outer=0.95)
+
+mcmc_plot(face_ad_f1_m1, type="intervals",  pars = "^b", prob = 0.9, prob_outer=0.95) +
+  scale_y_discrete(labels=my_labels) +
+  theme(axis.text = element_text(size=rel(1)))
+
+#x <- as.matrix(face_ad_f1_m1, pars = "^b")  
+#mcmc_intervals(x, prob = 0.9, prob_outer=0.95) + scale_y_discrete(labels=my_labels)
+```
+
+### Preceding segment
+
+Preceding segment:
+```{r}
+face_ad_f1_m1 %>%
+  emmeans( ~ prec.seg | CofP) %>%
+  gather_emmeans_draws() %>%
+  ggplot(aes(x = reorder(prec.seg, .value, median), y = .value, fill=CofP)) +
+  geom_eye(.width = c(.95)) +
+  stat_summary(aes(group = CofP), fun.y = mean, geom = "line") +
+  facet_grid(~ CofP) +
+  theme_light() + 
+  scale_fill_manual(values = c("gray80", "skyblue")) + 
+  xlab(NULL) + ylab("Posterior predicted norm. F1 z-score") +
+  theme(legend.position="none",
+        axis.text.x = element_text(size=rel(1.1), angle=45, hjust=1),
+        axis.text = element_text(size=rel(1.1)),
+        axis.title.y = element_text(size=rel(1.1)),
+        strip.text=element_text(size=rel(1.1))) #+ scale_y_reverse()
+```
+
+```{r}
+contrasts(face5$prec.seg)
+```
+
+```{r}
+emmeans(face_ad_f1_m1, ~ prec.seg)
+```
+
+
+Effect of preceding velar:
+```{r}
+hypothesis(face_ad_f1_m1, "prec.seg1 > 0", alpha=0.025)
+hypothesis(face_ad_f1_m1, "prec.seg2 > 0", alpha=0.025)
+hypothesis(face_ad_f1_m1, "prec.seg3 > 0", alpha=0.025)
+hypothesis(face_ad_f1_m1, "prec.seg4 > 0", alpha=0.025)
+hypothesis(face_ad_f1_m1, "prec.seg5 > 0", alpha=0.025)
+hypothesis(face_ad_f1_m1, "(Intercept - (prec.seg1 + prec.seg2 + prec.seg3 + prec.seg4 + prec.seg5)) > 0", alpha=0.025)
+```
+
+Interaction of CofP and preceding velar:
+```{r}
+hypothesis(face_ad_f1_m1, "CofP1:prec.seg1 > 0", alpha=0.025)
+hypothesis(face_ad_f1_m1, "CofP1:prec.seg2 > 0", alpha=0.025)
+hypothesis(face_ad_f1_m1, "CofP1:prec.seg3 > 0", alpha=0.025)
+hypothesis(face_ad_f1_m1, "CofP1:prec.seg4 > 0", alpha=0.025)
+hypothesis(face_ad_f1_m1, "CofP1:prec.seg5 > 0", alpha=0.025)
+hypothesis(face_ad_f1_m1, "(Intercept - (CofP1:prec.seg1 + CofP1:prec.seg2 + CofP1:prec.seg3 + CofP1:prec.seg4 + CofP1:prec.seg5)) > 0", alpha=0.025)
+```
+
+### Following segment
+Following segment:
+```{r}
+face_ad_f1_m1 %>%
+  emmeans( ~ following | CofP) %>%
+  gather_emmeans_draws() %>%
+  ggplot(aes(x = reorder(following, .value, median), y = .value, fill=CofP)) +
+  geom_eye(.width = c(.95)) +
+  stat_summary(aes(group = CofP), fun.y = mean, geom = "line") +
+  facet_grid(~ CofP) +
+  theme_light() + 
+  scale_fill_manual(values = c("gray80", "skyblue")) + 
+  xlab(NULL) + ylab("Posterior predicted norm. F1 z-score") +
+  theme(legend.position="none",
+        axis.text.x = element_text(size=rel(1.1), angle=45, hjust=1),
+        axis.text = element_text(size=rel(1.1)),
+        axis.title.y = element_text(size=rel(1.1)),
+        strip.text=element_text(size=rel(1.1)))
+```
+```{r}
+contrasts(face5$following)
+```
+
+```{r}
+emmeans(face_ad_f1_m1, ~ following)
+```
+
+
+
+Effect of followng voiceless:
+```{r}
+hypothesis(face_ad_f1_m1, "following1 > 0", alpha=0.025)
+hypothesis(face_ad_f1_m1, "following2 > 0", alpha=0.025)
+hypothesis(face_ad_f1_m1, "following3 > 0", alpha=0.025)
+hypothesis(face_ad_f1_m1, "following4 > 0", alpha=0.025)
+#hypothesis(face_ad_f1_m1, "prec.seg5 > 0", alpha=0.025)
+hypothesis(face_ad_f1_m1, "(Intercept - (following1 + following2 + following3 + following4 )) > 0", alpha=0.025)
+```
+
+Interaction of CofP and preceding velar:
+```{r}
+hypothesis(face_ad_f1_m1, "CofP1:following1 > 0", alpha=0.025)
+hypothesis(face_ad_f1_m1, "CofP1:following2 > 0", alpha=0.025)
+hypothesis(face_ad_f1_m1, "CofP1:following3 > 0", alpha=0.025)
+hypothesis(face_ad_f1_m1, "CofP1:following4 > 0", alpha=0.025)
+#hypothesis(face_ad_f1_m1, "CofP1:prec.seg5 > 0", alpha=0.025)
+hypothesis(face_ad_f1_m1, "(Intercept - (CofP1:following1 + CofP1:following2 + CofP1:following3 + CofP1:following4)) > 0", alpha=0.025)
+```
+### Random intercepts
+#### Participant
+```{r}
+face_ad_f1_m1 %>%
+  spread_draws(b_Intercept, r_participant[participant,term]) %>%
+  #head(10)
+  filter(term == "Intercept") %>% 
+  mutate(participant_median = r_participant) %>%
+  #median_hdi(participant_median = b_Intercept + r_participant) %>%
+  ggplot(aes(y = reorder(participant, participant_median), x = participant_median)) +
+  geom_halfeyeh(point_interval=median_hdi, .width=0.95) + geom_vline(xintercept=0, lty=2, color="red") +
+  theme_minimal() +
+  ylab(NULL) +
+  xlab("Participant intercept") +
+  theme(#axis.text.x = element_text(size=rel(1.1), angle=45, hjust=1),
+        axis.text = element_text(size=rel(1.1)),
+        axis.title.x = element_text(size=rel(1.1)))
+```
+
+
+#### Word
+Check which words were most frequent in the data:
+```{r}
+(face_words <- face5 %>% group_by(word) %>% summarise(counts=n()) %>% arrange(desc(counts)))
+```
+
+```{r}
+face_fr_words <- face_words %>% filter(counts > 20) %>% dplyr::pull(word) 
+```
+
+
+```{r}
+face_ad_f1_m1 %>%
+  spread_draws(b_Intercept, r_word[word,term]) %>%
+  filter(word %in% face_fr_words) %>% 
+  #head(10)
+  filter(term == "Intercept") %>% 
+  mutate(word_median = r_word) %>%
+ # median_hdi(participant_median = b_Intercept + r_participant) %>%
+  ggplot(aes(y = reorder(word, word_median), x = word_median)) +
+  geom_halfeyeh(point_interval=median_hdi, .width=0.95) + geom_vline(xintercept=0, lty=2, color="red")
+```
+
+
+## Youthclub model
+```{r}
+face_ad_studio <- face5 %>% filter(CofP=="studio")
+face_ad_youthclub <- face5 %>% filter(CofP=="youthclub")
+```
+
+Factors for youthclub model:
+
+- task
+
+- sex
+
+- ethnicity
+
+- outcode
+
+### Task
+```{r}
+table(face_ad_youthclub$task)
+```
+Good. 
+
+### sum-code factors
+
+The factors are: task, sex, ethnoling, CofP, outcode, following seg, prec.seg
+
+Dummy-code task and set reference to interview. This is because more than a thousand tokens are interview, and only 72 are reading!
+```{r}
+table(face_ad_youthclub$task)
+face_ad_youthclub$task <- as.factor(face_ad_youthclub$task)
+face_ad_youthclub$task <- relevel(face_ad_youthclub$task, ref="interview")
+table(face_ad_youthclub$task)
+```
+
+Sex:
+```{r}
+table(face_ad_youthclub$sex)
+face_ad_youthclub$sex <- as.factor(face_ad_youthclub$sex)
+contrasts(face_ad_youthclub$sex) <- contr.sum(2)
+contrasts(face_ad_youthclub$sex)
+```
+Outcode:
+```{r}
+table(face_ad_youthclub$outcode)
+face_ad_youthclub$outcode <- factor(face_ad_youthclub$outcode)
+contrasts(face_ad_youthclub$outcode) <- contr.sum(2)
+contrasts(face_ad_youthclub$outcode)
+```
+Prec.seg:
+```{r}
+table(face_ad_youthclub$sex, face_ad_youthclub$prec.seg)
+table(face_ad_youthclub$outcode, face_ad_youthclub$prec.seg)
+#table(face_ad_youthclub$ethnicity, face_ad_youthclub$prec.seg)
+
+face_ad_youthclub$prec.seg <- as.factor(face_ad_youthclub$prec.seg)
+contrasts(face_ad_youthclub$prec.seg) <- contr.sum(6)
+contrasts(face_ad_youthclub$prec.seg)
+```
+
+Following seg:
+```{r}
+table(face_ad_youthclub$sex, face_ad_youthclub$following)
+table(face_ad_youthclub$outcode, face_ad_youthclub$following)
+#table(face_ad_youthclub$ethnicity, face_ad_youthclub$following)
+
+face_ad_youthclub$following <- as.factor(face_ad_youthclub$following)
+contrasts(face_ad_youthclub$following) <- contr.sum(5)
+contrasts(face_ad_youthclub$following)
+```
+
+### set priors
+Get range of the dependent variable:
+```{r}
+summary(face_ad_youthclub$normF1_20)
+max(face_ad_youthclub$normF1_20)-min(face_ad_youthclub$normF1_20)
+sd(face_ad_youthclub$normF1_20)
+```
+
+```{r}
+my_priors3 <- c(
+  set_prior("normal(0, 3)", class = "Intercept"), # intercept
+  set_prior("normal(0, 3)", class = "b"), # beta
+  #set_prior("normal(0, 1)", class = "sd"), # st. dev. of random effects
+  #set_prior("normal(0, 1)", class = "sigma"), # sigma (overall error)
+  set_prior("lkj(2)", class = "cor") # random effects correlation matrix
+)
+#Defaults:
+#lkj(1) - cor
+#student_t(3, 0, 10) Intercept
+#student_t(3, 0, 10) sd
+# student_t(3, 0, 10) sigma
+```
+
+### Check for outliers
+```{r}
+ggplot(face_ad_youthclub, aes(x=normF1_20))+geom_histogram(bins=100) +theme_minimal()
+```
+
+Nice!
+### z-score the continuous variables
+```{r}
+face_ad_youthclub <- face_ad_youthclub %>% mutate(
+  LogDurZ = scale(LogDur, center = TRUE),
+  normF1_20z = scale(normF1_20, center = TRUE)
+)
+```
+
+Check what the mean and SD actually are:
+```{r}
+mean(face_ad_youthclub$normF1_20)
+sd(face_ad_youthclub$normF1_20)
+```
+
+
+Plot these to check it worked:
+```{r}
+ggplot(face_ad_youthclub, aes(x=normF1_20))+geom_histogram()+theme_minimal()
+ggplot(face_ad_youthclub, aes(x=normF1_20z))+geom_histogram()+theme_minimal() + geom_vline(xintercept=2) + geom_vline(xintercept=-2)
+```
+```{r}
+mean(face_ad_youthclub$normF1_20)
+sd(face_ad_youthclub$normF1_20)
+
+mean(face_ad_youthclub$LogDur)
+sd(face_ad_youthclub$LogDur)
+```
+
+
+### Run the model
+Model just for Youthclub
+```{r}
+#set.seed(12)
+#face_ad_y_f1_m1 <- brm(normF1_20z ~ LogDurZ +
+ #                        outcode*task +
+  #                        sex*task +
+   #                    outcode*prec.seg +
+    #                     outcode*following +
+     #                   outcode*sex +
+      #                (1 + prec.seg + following + task | participant) + 
+       #              (1|word), data = face_ad_youthclub,
+        #             prior = my_priors3,
+         #           control = list(adapt_delta = 0.99),
+          # file="models/face_ad_y_f1_m2")
+```
+
+### Load model
+```{r}
+face_ad_y_f1_m1 <- read_rds("models/face_ad_y_f1_m1.rds")
+```
+
+### PP check
+```{r}
+pp_check(face_ad_y_f1_m1, nsamples=100)
+```
+
+### Model summary
+```{r}
+(face_ad_y_f1_sum <- parameters::model_parameters(face_ad_y_f1_m1, ci=0.95, ci_method="hdi", effects="fixed"))
+```
+
+### Stanplot
+
+```{r}
+#mcmc_plot(face_ad_f1_m1, type="intervals",  pars = "^b", prob = 0.9, prob_outer=0.95)
+
+mcmc_plot(face_ad_y_f1_m1, type="intervals",  pars = "^b", prob = 0.9, prob_outer=0.95)# +
+ # scale_y_discrete(labels=yc_labels) +
+  #theme(axis.text = element_text(size=rel(1)))
+
+#x <- as.matrix(face_ad_f1_m1, pars = "^b")  
+#mcmc_intervals(x, prob = 0.9, prob_outer=0.95) + scale_y_discrete(labels=my_labels)
+```
+
+### Preceding environment
+```{r}
+face_ad_y_f1_m1 %>%
+  emmeans( ~ prec.seg | outcode) %>%
+  gather_emmeans_draws() %>%
+  ggplot(aes(x = reorder(prec.seg, .value, median), y = .value, fill=outcode)) +
+  geom_eye(.width = c(.95)) +
+  stat_summary(aes(group = outcode), fun.y = mean, geom = "line") +
+  facet_grid(~ outcode) +
+  theme_light() + 
+  scale_fill_manual(values = c("gray80", "skyblue")) + 
+  xlab(NULL) +
+  theme(legend.position="none",
+        axis.text.x = element_text(size=rel(1), angle=45, hjust=1),
+        axis.text = element_text(size=rel(1)),
+        strip.text=element_text(size=rel(1)))
+```
+
+```{r}
+contrasts(face_ad_youthclub$prec.seg)
+```
+
+```{r}
+emmeans(face_ad_y_f1_m1, ~ prec.seg)
+```
+
+Effect of preceding velar:
+```{r}
+hypothesis(face_ad_y_f1_m1, "prec.seg1 > 0", alpha=0.025)
+hypothesis(face_ad_y_f1_m1, "prec.seg2 > 0", alpha=0.025)
+hypothesis(face_ad_y_f1_m1, "prec.seg3 > 0", alpha=0.025)
+hypothesis(face_ad_y_f1_m1, "prec.seg4 > 0", alpha=0.025)
+hypothesis(face_ad_y_f1_m1, "prec.seg5 > 0", alpha=0.025)
+hypothesis(face_ad_y_f1_m1, "(Intercept - (prec.seg1 + prec.seg2 + prec.seg3 + prec.seg4 + prec.seg5)) > 0", alpha=0.025)
+```
+
+Interaction of outcode and preceding velar:
+```{r}
+hypothesis(face_ad_y_f1_m1, "outcode1:prec.seg1 > 0", alpha=0.025)
+hypothesis(face_ad_y_f1_m1, "outcode1:prec.seg2 > 0", alpha=0.025)
+hypothesis(face_ad_y_f1_m1, "outcode1:prec.seg3 > 0", alpha=0.025)
+hypothesis(face_ad_y_f1_m1, "outcode1:prec.seg4 > 0", alpha=0.025)
+hypothesis(face_ad_y_f1_m1, "outcode1:prec.seg5 > 0", alpha=0.025)
+hypothesis(face_ad_y_f1_m1, "(Intercept - (outcode1:prec.seg1 + outcode1:prec.seg2 + outcode1:prec.seg3 + outcode1:prec.seg4 + outcode1:prec.seg5)) > 0", alpha=0.025)
+```
+Oh, so there *is* an interaction of outcode and preceding velar.
+
+```{r}
+emmeans(face_ad_y_f1_m1, ~ prec.seg|outcode)
+```
+
+
+### Following environment
+```{r}
+face_ad_y_f1_m1 %>%
+  emmeans( ~ following | outcode) %>%
+  gather_emmeans_draws() %>%
+  ggplot(aes(x = reorder(following, .value, median), y = .value, fill=outcode)) +
+  geom_eye(.width = c(.95)) +
+  stat_summary(aes(group = outcode), fun.y = mean, geom = "line") +
+  facet_grid(~ outcode) +
+  theme_light() + 
+  scale_fill_manual(values = c("gray80", "skyblue")) + 
+  xlab(NULL) +
+  theme(legend.position="none",
+        axis.text.x = element_text(size=rel(1), angle=45, hjust=1),
+        axis.text = element_text(size=rel(1)),
+        strip.text=element_text(size=rel(1)))
+```
+
+```{r}
+contrasts(face_ad_youthclub$following)
+```
+
+```{r}
+emmeans(face_ad_y_f1_m1, ~ following)
+```
+
+
+
+Effect of following voiceless
+```{r}
+hypothesis(face_ad_y_f1_m1, "following1 > 0", alpha=0.025)
+hypothesis(face_ad_y_f1_m1, "following2 > 0", alpha=0.025)
+hypothesis(face_ad_y_f1_m1, "following3 > 0", alpha=0.025)
+hypothesis(face_ad_y_f1_m1, "following4 > 0", alpha=0.025)
+#hypothesis(face_ad_y_f1_m1c, "prec.seg5 > 0", alpha=0.025)
+hypothesis(face_ad_y_f1_m1, "(Intercept - (following1 + following2 + following3 + following4)) > 0", alpha=0.025)
+```
+
+Interaction of outcode and following voiceless
+```{r}
+hypothesis(face_ad_y_f1_m1, "outcode1:following1 > 0", alpha=0.025)
+hypothesis(face_ad_y_f1_m1, "outcode1:following2 > 0", alpha=0.025)
+hypothesis(face_ad_y_f1_m1, "outcode1:following3 > 0", alpha=0.025)
+hypothesis(face_ad_y_f1_m1, "outcode1:following4 > 0", alpha=0.025)
+#hypothesis(face_ad_y_f1_m1c, "outcode1:prec.seg5 > 0", alpha=0.025)
+hypothesis(face_ad_y_f1_m1, "(Intercept - (outcode1:following1 + outcode1:following2 + outcode1:following3 + outcode1:following4)) > 0", alpha=0.025)
+```
+
+
+### Sex, outcode and task
+
+```{r}
+face_ad_y_f1_m1 %>%
+  emmeans( ~ task | sex) %>%
+  gather_emmeans_draws() %>%
+  ggplot(aes(x = reorder(task, .value, median), y = .value, fill=sex)) +
+  geom_eye(.width = c(.95)) +
+  stat_summary(aes(group = sex), fun.y = mean, geom = "line") +
+  facet_grid(~ sex) +
+  theme_light() + 
+  scale_fill_manual(values = c("gray80", "skyblue")) + 
+  xlab(NULL) +
+  theme(legend.position="none",
+        axis.text.x = element_text(size=rel(1), angle=45, hjust=1),
+        axis.text = element_text(size=rel(1)),
+        strip.text=element_text(size=rel(1)))
+```
+Outcode and task interaction:
+```{r}
+face_ad_y_f1_m1 %>%
+  emmeans( ~ task | outcode) %>%
+  gather_emmeans_draws() %>%
+  ggplot(aes(x = reorder(task, .value, median), y = .value, fill=outcode)) +
+  geom_eye(.width = c(.95)) +
+  stat_summary(aes(group = outcode), fun.y = mean, geom = "line") +
+  facet_grid(~ outcode) +
+  theme_light() + 
+  scale_fill_manual(values = c("gray80", "skyblue")) + 
+  xlab(NULL) +
+  theme(legend.position="none",
+        axis.text.x = element_text(size=rel(1), angle=45, hjust=1),
+        axis.text = element_text(size=rel(1)),
+        strip.text=element_text(size=rel(1)))
+```
+
+
+### Random intercepts
+Participant random intercepts
+```{r}
+face_ad_y_f1_m1 %>%
+  spread_draws(b_Intercept, r_participant[participant,term]) %>%
+  #head(10)
+  filter(term == "Intercept") %>% 
+  mutate(participant_median = r_participant) %>%
+  #median_hdi(participant_median = b_Intercept + r_participant) %>%
+  ggplot(aes(y = reorder(participant, participant_median), x = participant_median)) +
+  geom_halfeyeh(point_interval=median_hdi, .width=0.95) + geom_vline(xintercept=0, lty=2, color="red")
+```
+
+So Joe has a particularly close FACE - not surprising, really.
+
+Word random intercepts, using the "frequent words" vector we created earlier:
+```{r}
+face_ad_y_f1_m1 %>%
+  spread_draws(b_Intercept, r_word[word,term]) %>%
+  filter(word %in% face_fr_words) %>% 
+  #head(10)
+  filter(term == "Intercept") %>% 
+  mutate(word_median = r_word) %>%
+ # median_hdi(participant_median = b_Intercept + r_participant) %>%
+  ggplot(aes(y = reorder(word, word_median), x = word_median)) +
+  geom_halfeyeh(point_interval=median_hdi, .width=0.95) + geom_vline(xintercept=0, lty=2, color="red")
+```
+
+## Studio model
+Factors for studio model:
+
+- task
+
+- outcode
+
+
+### Task
+```{r}
+table(face_ad_studio$task)
+```
+
+### sum-code factors
+
+The factors are: task, outcode, following seg, prec.seg
+
+Dummy-code task and set reference to interview.
+```{r}
+table(face_ad_studio$task)
+face_ad_studio$task <- as.factor(face_ad_studio$task)
+face_ad_studio$task <- relevel(face_ad_studio$task, ref="interview")
+table(face_ad_studio$task)
+```
+
+Outcode:
+```{r}
+table(face_ad_studio$outcode)
+face_ad_studio$outcode <- factor(face_ad_studio$outcode)
+contrasts(face_ad_studio$outcode) <- contr.sum(2)
+contrasts(face_ad_studio$outcode)
+```
+Prec.seg:
+```{r}
+
+table(face_ad_studio$outcode, face_ad_studio$prec.seg)
+
+
+face_ad_studio$prec.seg <- as.factor(face_ad_studio$prec.seg)
+contrasts(face_ad_studio$prec.seg) <- contr.sum(6)
+contrasts(face_ad_studio$prec.seg)
+```
+
+
+Following seg:
+```{r}
+table(face_ad_studio$outcode, face_ad_studio$following)
+face_ad_studio$following <- as.factor(face_ad_studio$following)
+contrasts(face_ad_studio$following) <- contr.sum(5)
+contrasts(face_ad_studio$following)
+```
+
+#### set priors
+Get range of the dependent variable:
+```{r}
+summary(face_ad_studio$normF1_20)
+max(face_ad_studio$normF1_20)-min(face_ad_studio$normF1_20)
+sd(face_ad_studio$normF1_20)
+```
+
+```{r}
+my_priors3 <- c(
+  set_prior("normal(0, 3)", class = "Intercept"), # intercept
+  set_prior("normal(0, 3)", class = "b"), # beta
+  #set_prior("normal(0, 1)", class = "sd"), # st. dev. of random effects
+  #set_prior("normal(0, 1)", class = "sigma"), # sigma (overall error)
+  set_prior("lkj(2)", class = "cor") # random effects correlation matrix
+)
+#Defaults:
+#lkj(1) - cor
+#student_t(3, 0, 10) Intercept
+#student_t(3, 0, 10) sd
+# student_t(3, 0, 10) sigma
+```
+
+#### Check for outliers
+```{r}
+ggplot(face_ad_studio, aes(x=normF1_20))+geom_histogram(bins=100) +theme_minimal()
+```
+Looks OK
+
+#### z-score the continuous variables
+```{r}
+face_ad_studio <- face_ad_studio %>% mutate(
+  LogDurZ = scale(LogDur, center = TRUE),
+  normF1_20z = scale(normF1_20, center = TRUE)
+)
+```
+
+Plot these to check it worked:
+```{r}
+ggplot(face_ad_studio, aes(x=normF1_20))+geom_histogram()+theme_minimal()
+ggplot(face_ad_studio, aes(x=normF1_20z))+geom_histogram()+theme_minimal() + geom_vline(xintercept=2) + geom_vline(xintercept=-2)
+```
+Looks OK.
+
+```{r}
+mean(face_ad_studio$normF1_20)
+sd(face_ad_studio$normF1_20)
+
+mean(face_ad_studio$LogDur)
+sd(face_ad_studio$LogDur)
+```
+
+
+### Run the model
+studio model
+```{r}
+#face_ad_st_f1_m1 <- brm(normF1_20z ~ LogDurZ +
+ #                         outcode*task +
+  #                     outcode*prec.seg +
+   #                      outcode*following +
+    #                   (1 + prec.seg + following + task | participant) + 
+     #                (1|word), data = face_ad_studio,
+      #               prior = my_priors3,
+       #              control = list(adapt_delta = 0.99),
+        #    file="models/face_ad_st_f1_m1")
+```
+### Load model
+```{r}
+face_ad_st_f1_m1 <- read_rds("models/face_ad_st_f1_m1.rds")
+```
+
+
+### PP check
+```{r}
+pp_check(face_ad_st_f1_m1)
+```
+
+
+### Model summary
+```{r}
+(face_ad_st_f1_sum <- parameters::model_parameters(face_ad_st_f1_m1, ci=0.95, ci_method="hdi", effects="fixed"))
+```
+
+### Stanplot
+
+
+
+
+```{r}
+mcmc_plot(face_ad_st_f1_m1, type="intervals",  pars = "^b", prob = 0.9, prob_outer=0.95)
+
+#x <- as.matrix(face_ad_f1_m1, pars = "^b")  
+#mcmc_intervals(x, prob = 0.9, prob_outer=0.95) + scale_y_discrete(labels=my_labels)
+```
+### Preceding environment
+```{r}
+face_ad_st_f1_m1 %>%
+  emmeans( ~ prec.seg | outcode) %>%
+  gather_emmeans_draws() %>%
+  ggplot(aes(x = reorder(prec.seg, .value, median), y = .value, fill=outcode)) +
+  geom_eye(.width = c(.95)) +
+  stat_summary(aes(group = outcode), fun.y = mean, geom = "line") +
+  facet_grid(~ outcode) +
+  theme_light() + 
+  scale_fill_manual(values = c("gray80", "skyblue")) + 
+  xlab(NULL) +
+  theme(legend.position="none",
+        axis.text.x = element_text(size=rel(1), angle=45, hjust=1),
+        axis.text = element_text(size=rel(1)),
+        strip.text=element_text(size=rel(1)))
+```
+
+```{r}
+contrasts(face_ad_studio$prec.seg)
+```
+
+```{r}
+emmeans(face_ad_st_f1_m1, ~ prec.seg)
+```
+
+
+
+Effect of preceding velar:
+```{r}
+hypothesis(face_ad_st_f1_m1, "prec.seg1 > 0", alpha=0.025)
+hypothesis(face_ad_st_f1_m1, "prec.seg2 > 0", alpha=0.025)
+hypothesis(face_ad_st_f1_m1, "prec.seg3 > 0", alpha=0.025)
+hypothesis(face_ad_st_f1_m1, "prec.seg4 > 0", alpha=0.025)
+hypothesis(face_ad_st_f1_m1, "prec.seg5 > 0", alpha=0.025)
+hypothesis(face_ad_st_f1_m1, "(Intercept - (prec.seg1 + prec.seg2 + prec.seg3 + prec.seg4 + prec.seg5)) > 0", alpha=0.025)
+```
+Preceding velar has an effect but we already knew that. What we are especially interested in is the interaction with outcode.
+
+Interaction of outcode and preceding velar:
+```{r}
+hypothesis(face_ad_st_f1_m1, "outcode1:prec.seg1 > 0", alpha=0.025)
+hypothesis(face_ad_st_f1_m1, "outcode1:prec.seg2 > 0", alpha=0.025)
+hypothesis(face_ad_st_f1_m1, "outcode1:prec.seg3 > 0", alpha=0.025)
+hypothesis(face_ad_st_f1_m1, "outcode1:prec.seg4 > 0", alpha=0.025)
+hypothesis(face_ad_st_f1_m1, "outcode1:prec.seg5 > 0", alpha=0.025)
+hypothesis(face_ad_st_f1_m1, "(Intercept - (outcode1:prec.seg1 + outcode1:prec.seg2 + outcode1:prec.seg3 + outcode1:prec.seg4 + outcode1:prec.seg5)) > 0", alpha=0.025)
+```
+
+
+### Following environment
+```{r}
+face_ad_st_f1_m1 %>%
+  emmeans( ~ following | outcode) %>%
+  gather_emmeans_draws() %>%
+  ggplot(aes(x = reorder(following, .value, median), y = .value, fill=outcode)) +
+  geom_eye(.width = c(.95)) +
+  stat_summary(aes(group = outcode), fun.y = mean, geom = "line") +
+  facet_grid(~ outcode) +
+  theme_light() + 
+  scale_fill_manual(values = c("gray80", "skyblue")) + 
+  xlab(NULL) +
+  theme(legend.position="none",
+        axis.text.x = element_text(size=rel(1), angle=45, hjust=1),
+        axis.text = element_text(size=rel(1)),
+        strip.text=element_text(size=rel(1)))
+```
+
+```{r}
+contrasts(face_ad_studio$following)
+```
+
+```{r}
+emmeans(face_ad_st_f1_m1, ~ following)
+```
+
+
+
+Effect of following voiceless
+```{r}
+hypothesis(face_ad_st_f1_m1, "following1 > 0", alpha=0.025)
+hypothesis(face_ad_st_f1_m1, "following2 > 0", alpha=0.025)
+hypothesis(face_ad_st_f1_m1, "following3 > 0", alpha=0.025)
+hypothesis(face_ad_st_f1_m1, "following4 > 0", alpha=0.025)
+#hypothesis(face_ad_y_f1_m1c, "prec.seg5 > 0", alpha=0.025)
+hypothesis(face_ad_st_f1_m1, "(Intercept - (following1 + following2 + following3 + following4)) > 0", alpha=0.025)
+```
+
+Interaction of outcode and following voiceless
+```{r}
+hypothesis(face_ad_st_f1_m1, "outcode1:following1 > 0", alpha=0.025)
+hypothesis(face_ad_st_f1_m1, "outcode1:following2 > 0", alpha=0.025)
+hypothesis(face_ad_st_f1_m1, "outcode1:following3 > 0", alpha=0.025)
+hypothesis(face_ad_st_f1_m1, "outcode1:following4 > 0", alpha=0.025)
+#hypothesis(face_ad_y_f1_m1c, "outcode1:prec.seg5 > 0", alpha=0.025)
+hypothesis(face_ad_st_f1_m1, "(Intercept - (outcode1:following1 + outcode1:following2 + outcode1:following3 + outcode1:following4)) > 0", alpha=0.025)
+```
+
+xxx
+
+
+### Random intercepts
+Participant random intercepts
+```{r}
+face_ad_st_f1_m1 %>%
+  spread_draws(b_Intercept, r_participant[participant,term]) %>%
+  #head(10)
+  filter(term == "Intercept") %>% 
+  mutate(participant_median = r_participant) %>%
+  #median_hdi(participant_median = b_Intercept + r_participant) %>%
+  ggplot(aes(y = participant, x = participant_median)) +
+  geom_halfeyeh(point_interval=median_hdi, .width=0.95) + geom_vline(xintercept=0, lty=2, color="red")
+```
+
+Word random intercepts, using the "frequent words" vector we created earlier:
+```{r}
+face_ad_st_f1_m1 %>%
+  spread_draws(b_Intercept, r_word[word,term]) %>%
+  filter(word %in% face_fr_words) %>% 
+  #head(10)
+  filter(term == "Intercept") %>% 
+  mutate(word_median = r_word) %>%
+ # median_hdi(participant_median = b_Intercept + r_participant) %>%
+  ggplot(aes(y = reorder(word, word_median), x = word_median)) +
+  geom_halfeyeh(point_interval=median_hdi, .width=0.95) + geom_vline(xintercept=0, lty=2, color="red")
+```
+In both the Studio and Youthclub CofPs, the words "saying" and "okay" are predicted to show a higher onset F1.
+
+# FACE: adolescents: TL
+## EDA
+Check whether TL is different by outcode, sex, CofP, ethnicity, and also by following seg, preceding seg.
+```{r}
+ggplot(face5, aes(x=log(norm_TL))) + geom_histogram() +
+  theme_minimal()
+```
+It's pretty much OK.
+
+## Initial model - comparing CofPs
+We need to:
+
+- exclude wordlist data
+
+- sum-code factors
+
+- set priors
+
+- z-score the continuous variables
+
+### Task
+```{r}
+table(face5$task)
+```
+
+
+### sum-code factors
+
+The factors for the CofP model are just CofP, outcode, following seg, prec.seg
+
+Dummy-code task and set reference to interview. This is because more than a thousand tokens are interview, and only 72 are reading!
+CofP:
+```{r}
+table(face5$CofP)
+face5$CofP <- as.factor(face5$CofP)
+contrasts(face5$CofP) <- contr.sum(2)
+contrasts(face5$CofP)
+```
+Prec.seg:
+```{r}
+table(face5$prec.seg)
+face5$prec.seg <- as.factor(face5$prec.seg)
+contrasts(face5$prec.seg) <- contr.sum(6)
+contrasts(face5$prec.seg)
+```
+
+
+Following seg:
+```{r}
+table(face5$following)
+face5$following <- as.factor(face5$following)
+contrasts(face5$following) <- contr.sum(5)
+contrasts(face5$following)
+```
+### log-transform TL
+```{r}
+face5 <- face5 %>% mutate(
+  LogTL = log(norm_TL)
+)
+```
+
+
+### set priors
+Get range of the dependent variable:
+```{r}
+summary(face5$LogTL)
+max(face5$LogTL)-min(face5$LogTL)
+sd(face5$LogTL)
+```
+
+```{r}
+my_priors3 <- c(
+  set_prior("normal(0, 5)", class = "Intercept"), # intercept
+  set_prior("normal(0, 5)", class = "b"), # beta
+  #set_prior("normal(0, 1)", class = "sd"), # st. dev. of random effects
+  #set_prior("normal(0, 1)", class = "sigma"), # sigma (overall error)
+  set_prior("lkj(2)", class = "cor") # random effects correlation matrix
+)
+#Defaults:
+#lkj(1) - cor
+#student_t(3, 0, 10) Intercept
+#student_t(3, 0, 10) sd
+# student_t(3, 0, 10) sigma
+```
+
+#### Check for outliers
+```{r}
+ggplot(face5, aes(x=LogTL))+geom_histogram(bins=100) +theme_minimal()
+```
+Looks OK
+
+### z-score the continuous variables
+```{r}
+face5 <- face5 %>% mutate(
+  LogDurZ = scale(LogDur, center = TRUE),
+  LogTLz = scale(LogTL, center = TRUE)
+)
+```
+
+Plot these to check it worked:
+```{r}
+ggplot(face5, aes(x=LogTL))+geom_histogram()+theme_minimal()
+ggplot(face5, aes(x=LogTLz))+geom_histogram()+theme_minimal() + geom_vline(xintercept=2) + geom_vline(xintercept=-2)
+```
+Looks OK.
+
+```{r}
+mean(face5$LogTL)
+sd(face5$LogTL)
+
+mean(face5$LogDur)
+sd(face5$LogDur)
+```
+Get these out of logarithmic form and back to normed formant frequencies:
+```{r}
+exp(mean(face5$LogTL))
+exp(sd(face5$LogTL))
+```
+
+```{r}
+ggplot(face5, aes(x=norm_TL)) + 
+  geom_histogram() +
+  geom_vline(xintercept = exp(mean(face5$LogTL)), color="red")
+
+ggplot(face5, aes(x=LogTL)) + 
+  geom_histogram() +
+  geom_vline(xintercept = mean(face5$LogTL), color="red")
+```
+
+
+### Run the model
+Initial model with just CofP
+```{r}
+set.seed(16) #for reproducability
+#face_ad_tl_m1 <- brm(LogTLz ~ LogDurZ +
+ #                      CofP*prec.seg +
+  #                         CofP*following +
+   #                    (1 + prec.seg + following | participant) + 
+    #                 (1+ CofP|word), data = face5,
+     #                prior = my_priors3,
+      #               control = list(adapt_delta = 0.99),
+       #     file="models/face_ad_tl_m1")
+```
+
+### Load model
+```{r}
+face_ad_tl_m1 <- read_rds("models/face_ad_tl_m1.rds")
+```
+
+
+### PP check
+
+```{r}
+pp_check(face_ad_tl_m1)
+```
+
+### Model summary
+```{r}
+(face_ad_tl_sum <- parameters::model_parameters(face_ad_tl_m1, ci=0.95, ci_method="hdi", effects="fixed"))
+```
+
+### Stanplot
+
+```{r}
+stanplot(face_ad_tl_m1, type="intervals",  pars = "^b", prob = 0.9, prob_outer=0.95)
+```
+So there probably is a difference between the CofPs.
+
+### CofPs
+Remember these histograms from earlier?
+```{r}
+ggplot(face5, aes(x=norm_TL)) + 
+  geom_histogram() +
+  geom_vline(xintercept = exp(mean(face5$LogTL)), color="red")
+
+ggplot(face5, aes(x=LogTL)) + 
+  geom_histogram() +
+  geom_vline(xintercept = mean(face5$LogTL), color="red")
+```
+
+Add the CofP coefficient.
+```{r}
+#fixed <- fixef(face_ad_tl_m1)
+
+CofP_fixef <- as_tibble(face_ad_tl_sum) %>% filter(Parameter=="b_CofP1")
+
+CofP_fixef$Median
+```
+
+
+```{r}
+ggplot(face5, aes(x=LogTL)) + 
+  geom_histogram() +
+  geom_vline(xintercept = mean(face5$LogTL), color="red") +
+  geom_vline(xintercept = (mean(face5$LogTL)+(sd(face5$LogTL)*CofP_fixef$Median)), color="blue") +
+  geom_vline(xintercept = (mean(face5$LogTL)-(sd(face5$LogTL)*CofP_fixef$Median)), color="blue")
+```
+```{r}
+ggplot(face5, aes(x=norm_TL)) + 
+  geom_histogram() +
+  geom_vline(xintercept = exp(mean(face5$LogTL)), color="red") + # back-transformed mean
+  geom_vline(xintercept = median(face5$norm_TL), color="green") + #actual median
+  geom_vline(xintercept = (exp(mean(face5$LogTL)+(sd(face5$LogTL)*CofP_fixef$Median))), color="blue") +
+  geom_vline(xintercept = (exp(mean(face5$LogTL)-(sd(face5$LogTL)*CofP_fixef$Median))), color="blue")
+```
+
+
+### Preceding segment
+
+Preceding segment:
+```{r}
+face_ad_tl_m1 %>%
+  emmeans( ~ prec.seg | CofP) %>%
+  gather_emmeans_draws() %>%
+  ggplot(aes(x = reorder(prec.seg, .value, median), y = .value, fill=CofP)) +
+  geom_eye(.width = c(.95)) +
+  stat_summary(aes(group = CofP), fun.y = mean, geom = "line") +
+  facet_grid(~ CofP) +
+  theme_light() + 
+  scale_fill_manual(values = c("gray80", "skyblue")) + 
+  xlab(NULL) + ylab("Posterior predicted log(TL) z-score") +
+  theme(legend.position="none",
+        axis.text.x = element_text(size=rel(1.1), angle=45, hjust=1),
+        axis.text = element_text(size=rel(1.1)),
+        axis.title.y = element_text(size=rel(1.1)),
+        strip.text=element_text(size=rel(1.1))) #+ scale_y_reverse()
+```
+
+```{r}
+emmeans(face_ad_tl_m1, ~ prec.seg)
+```
+
+
+
+Effect of preceding velar:
+```{r}
+hypothesis(face_ad_tl_m1, "prec.seg1 > 0", alpha=0.025)
+hypothesis(face_ad_tl_m1, "prec.seg2 > 0", alpha=0.025)
+hypothesis(face_ad_tl_m1, "prec.seg3 > 0", alpha=0.025)
+hypothesis(face_ad_tl_m1, "prec.seg4 > 0", alpha=0.025)
+hypothesis(face_ad_tl_m1, "prec.seg5 > 0", alpha=0.025)
+hypothesis(face_ad_tl_m1, "(Intercept - (prec.seg1 + prec.seg2 + prec.seg3 + prec.seg4 + prec.seg5)) > 0", alpha=0.025)
+```
+
+Interaction of CofP and preceding velar:
+```{r}
+hypothesis(face_ad_tl_m1, "CofP1:prec.seg1 > 0", alpha=0.025)
+hypothesis(face_ad_tl_m1, "CofP1:prec.seg2 > 0", alpha=0.025)
+hypothesis(face_ad_tl_m1, "CofP1:prec.seg3 > 0", alpha=0.025)
+hypothesis(face_ad_tl_m1, "CofP1:prec.seg4 > 0", alpha=0.025)
+hypothesis(face_ad_tl_m1, "CofP1:prec.seg5 > 0", alpha=0.025)
+hypothesis(face_ad_tl_m1, "(Intercept - (CofP1:prec.seg1 + CofP1:prec.seg2 + CofP1:prec.seg3 + CofP1:prec.seg4 + CofP1:prec.seg5)) > 0", alpha=0.025)
+```
+
+### Following segment
+Following segment:
+```{r}
+face_ad_tl_m1 %>%
+  emmeans( ~ following | CofP) %>%
+  gather_emmeans_draws() %>%
+  ggplot(aes(x = reorder(following, .value, median), y = .value, fill=CofP)) +
+  geom_eye(.width = c(.95)) +
+  stat_summary(aes(group = CofP), fun.y = mean, geom = "line") +
+  facet_grid(~ CofP) +
+  theme_light() + 
+  scale_fill_manual(values = c("gray80", "skyblue")) + 
+  xlab(NULL) + ylab("Posterior predicted log(TL) z-score") +
+  theme(legend.position="none",
+        axis.text.x = element_text(size=rel(1.1), angle=45, hjust=1),
+        axis.text = element_text(size=rel(1.1)),
+        axis.title.y = element_text(size=rel(1.1)),
+        strip.text=element_text(size=rel(1.1)))
+```
+
+```{r}
+emmeans(face_ad_tl_m1, ~ following)
+```
+
+
+
+Effect of followng voiceless:
+```{r}
+hypothesis(face_ad_tl_m1, "following1 > 0", alpha=0.025)
+hypothesis(face_ad_tl_m1, "following2 > 0", alpha=0.025)
+hypothesis(face_ad_tl_m1, "following3 > 0", alpha=0.025)
+hypothesis(face_ad_tl_m1, "following4 > 0", alpha=0.025)
+#hypothesis(face_ad_f1_m1, "prec.seg5 > 0", alpha=0.025)
+hypothesis(face_ad_tl_m1, "(Intercept - (following1 + following2 + following3 + following4 )) > 0", alpha=0.025)
+```
+
+Interaction of CofP and preceding velar:
+```{r}
+hypothesis(face_ad_tl_m1, "CofP1:following1 > 0", alpha=0.025)
+hypothesis(face_ad_tl_m1, "CofP1:following2 > 0", alpha=0.025)
+hypothesis(face_ad_tl_m1, "CofP1:following3 > 0", alpha=0.025)
+hypothesis(face_ad_tl_m1, "CofP1:following4 > 0", alpha=0.025)
+#hypothesis(face_ad_f1_m1, "CofP1:prec.seg5 > 0", alpha=0.025)
+hypothesis(face_ad_tl_m1, "(Intercept - (CofP1:following1 + CofP1:following2 + CofP1:following3 + CofP1:following4)) > 0", alpha=0.025)
+```
+### Random intercepts
+```{r}
+face_ad_tl_m1 %>%
+  spread_draws(b_Intercept, r_participant[participant,term]) %>%
+  #head(10)
+  filter(term == "Intercept") %>% 
+  mutate(participant_median = r_participant) %>%
+  #median_hdi(participant_median = b_Intercept + r_participant) %>%
+  ggplot(aes(y = reorder(participant, participant_median), x = participant_median)) +
+  geom_halfeyeh(point_interval=median_hdi, .width=0.95) + geom_vline(xintercept=0, lty=2, color="red") +
+  theme_minimal() +
+  ylab(NULL) +
+  xlab("Participant intercept") +
+  theme(#axis.text.x = element_text(size=rel(1.1), angle=45, hjust=1),
+        axis.text = element_text(size=rel(1.1)),
+        axis.title.x = element_text(size=rel(1.1)))
+```
+
+Word random intercepts, using the "frequent words" vector we created earlier:
+```{r}
+face_ad_tl_m1 %>%
+  spread_draws(b_Intercept, r_word[word,term]) %>%
+  filter(word %in% face_fr_words) %>% 
+  #head(10)
+  filter(term == "Intercept") %>% 
+  mutate(word_median = r_word) %>%
+ # median_hdi(participant_median = b_Intercept + r_participant) %>%
+  ggplot(aes(y = reorder(word, word_median), x = word_median)) +
+  geom_halfeyeh(point_interval=median_hdi, .width=0.95) + geom_vline(xintercept=0, lty=2, color="red")
+```
+
+## Youthclub model
+Factors for youthclub model:
+
+- task
+
+- sex
+
+- ethnicity
+
+- outcode
+
+### Task
+```{r}
+table(face_ad_youthclub$task)
+```
+Good. 
+
+### sum-code factors
+
+The factors are: task, sex,  outcode, following seg, prec.seg
+
+Dummy-code task and set reference to interview.
+```{r}
+table(face_ad_youthclub$task)
+face_ad_youthclub$task <- as.factor(face_ad_youthclub$task)
+#price_ad_youthclub$task <- relevel(price_ad_youthclub$task, ref="interview")
+#table(price_ad_youthclub$task)
+```
+
+Sex:
+```{r}
+table(face_ad_youthclub$sex)
+face_ad_youthclub$sex <- as.factor(face_ad_youthclub$sex)
+contrasts(face_ad_youthclub$sex) <- contr.sum(2)
+contrasts(face_ad_youthclub$sex)
+```
+
+
+Outcode:
+```{r}
+table(face_ad_youthclub$outcode)
+face_ad_youthclub$outcode <- factor(face_ad_youthclub$outcode)
+contrasts(face_ad_youthclub$outcode) <- contr.sum(2)
+contrasts(face_ad_youthclub$outcode)
+```
+Prec.seg:
+```{r}
+table(face_ad_youthclub$sex, face_ad_youthclub$prec.seg)
+table(face_ad_youthclub$outcode, face_ad_youthclub$prec.seg)
+#table(face_ad_tl_youthclub$ethnicity, face_ad_tl_youthclub$prec.seg)
+
+face_ad_youthclub$prec.seg <- as.factor(face_ad_youthclub$prec.seg)
+contrasts(face_ad_youthclub$prec.seg) <- contr.sum(6)
+contrasts(face_ad_youthclub$prec.seg)
+```
+
+
+
+Following seg:
+```{r}
+table(face_ad_youthclub$sex, face_ad_youthclub$following)
+table(face_ad_youthclub$outcode, face_ad_youthclub$following)
+#table(face_ad_tl_youthclub$ethnicity, face_ad_tl_youthclub$following)
+
+face_ad_youthclub$following <- as.factor(face_ad_youthclub$following)
+contrasts(face_ad_youthclub$following) <- contr.sum(5)
+contrasts(face_ad_youthclub$following)
+```
+
+### log-transform TL
+```{r}
+face_ad_youthclub <- face_ad_youthclub %>% mutate(
+  LogTL = log(norm_TL)
+)
+```
+
+
+### set priors
+Get range of the dependent variable:
+```{r}
+summary(face_ad_youthclub$LogTL)
+max(face_ad_youthclub$LogTL)-min(face_ad_youthclub$LogTL)
+sd(face_ad_youthclub$LogTL)
+```
+
+```{r}
+my_priors3 <- c(
+  set_prior("normal(0, 3)", class = "Intercept"), # intercept
+  set_prior("normal(0, 3)", class = "b"), # beta
+  #set_prior("normal(0, 1)", class = "sd"), # st. dev. of random effects
+  #set_prior("normal(0, 1)", class = "sigma"), # sigma (overall error)
+  set_prior("lkj(2)", class = "cor") # random effects correlation matrix
+)
+#Defaults:
+#lkj(1) - cor
+#student_t(3, 0, 10) Intercept
+#student_t(3, 0, 10) sd
+# student_t(3, 0, 10) sigma
+```
+
+### Check for outliers
+```{r}
+ggplot(face_ad_youthclub, aes(x=LogTL))+geom_histogram(bins=100) +theme_minimal()
+```
+
+### z-score the continuous variables
+```{r}
+face_ad_youthclub <- face_ad_youthclub %>% mutate(
+  LogDurZ = scale(LogDur, center = TRUE),
+  LogTLz = scale(LogTL, center = TRUE)
+)
+```
+
+Plot these to check it worked:
+```{r}
+ggplot(face_ad_youthclub, aes(x=LogTL))+geom_histogram()+theme_minimal()
+ggplot(face_ad_youthclub, aes(x=LogTLz))+geom_histogram()+theme_minimal() + geom_vline(xintercept=2) + geom_vline(xintercept=-2)
+```
+Looks pretty good.
+
+```{r}
+mean(face_ad_youthclub$LogTL)
+sd(face_ad_youthclub$LogTL)
+
+exp(mean(face_ad_youthclub$LogTL))
+exp(sd(face_ad_youthclub$LogTL))
+
+mean(face_ad_youthclub$norm_TL)
+sd(face_ad_youthclub$norm_TL)
+```
+
+
+### Run the model
+Model just for Youthclub
+```{r}
+set.seed(12)
+#face_ad_y_tl_m1 <- brm(LogTLz ~ LogDurZ +
+ #                        outcode*task +
+  #                        sex*task +
+   #                    outcode*prec.seg +
+    #                     outcode*following +
+     #                   outcode*sex +
+      #                (1 + prec.seg + following + task | participant) + 
+       #              (1|word), data = face_ad_youthclub,
+        #             prior = my_priors3,
+         #           control = list(adapt_delta = 0.99),
+          # file="models/face_ad_y_tl_m1")
+```
+### Load model
+```{r}
+face_ad_y_tl_m1 <- read_rds("models/face_ad_y_tl_m1.rds")
+```
+
+### PP check
+```{r}
+pp_check(face_ad_y_tl_m1)
+```
+Pretty excellent fit.
+
+### Model summary
+```{r}
+(face_ad_y_tl_sum <- parameters::model_parameters(face_ad_y_tl_m1, ci=0.95, ci_method="hdi", effects="fixed"))
+```
+
+### Stanplot
+
+```{r}
+stanplot(face_ad_y_tl_m1, type="intervals",  pars = "^b", prob = 0.9, prob_outer=0.95)
+```
+### Sex and outcode
+```{r}
+emmip(face_ad_y_tl_m1, ~sex, CIs=TRUE)
+```
+
+
+### Preceding segment
+
+Preceding segment:
+```{r}
+face_ad_y_tl_m1 %>%
+  emmeans( ~ prec.seg | outcode) %>%
+  gather_emmeans_draws() %>%
+  ggplot(aes(x = reorder(prec.seg, .value, median), y = .value, fill=outcode)) +
+  geom_eye(.width = c(.95)) +
+  stat_summary(aes(group = outcode), fun.y = mean, geom = "line") +
+  facet_grid(~ outcode) +
+  theme_light() + 
+  scale_fill_manual(values = c("gray80", "skyblue")) + 
+  xlab(NULL) + ylab("Posterior predicted log(TL) z-score") +
+  theme(legend.position="none",
+        axis.text.x = element_text(size=rel(1.1), angle=45, hjust=1),
+        axis.text = element_text(size=rel(1.1)),
+        axis.title.y = element_text(size=rel(1.1)),
+        strip.text=element_text(size=rel(1.1))) #+ scale_y_reverse()
+```
+
+
+```{r}
+emmeans(face_ad_y_tl_m1, ~ prec.seg)
+```
+
+
+
+Effect of preceding velar:
+```{r}
+hypothesis(face_ad_y_tl_m1, "prec.seg1 > 0", alpha=0.025)
+hypothesis(face_ad_y_tl_m1, "prec.seg2 > 0", alpha=0.025)
+hypothesis(face_ad_y_tl_m1, "prec.seg3 > 0", alpha=0.025)
+hypothesis(face_ad_y_tl_m1, "prec.seg4 > 0", alpha=0.025)
+hypothesis(face_ad_y_tl_m1, "prec.seg5 > 0", alpha=0.025)
+hypothesis(face_ad_y_tl_m1, "(Intercept - (prec.seg1 + prec.seg2 + prec.seg3 + prec.seg4 + prec.seg5)) > 0", alpha=0.025)
+```
+
+Interaction of CofP and preceding velar:
+```{r}
+hypothesis(face_ad_y_tl_m1, "outcode1:prec.seg1 > 0", alpha=0.025)
+hypothesis(face_ad_y_tl_m1, "outcode1:prec.seg2 > 0", alpha=0.025)
+hypothesis(face_ad_y_tl_m1, "outcode1:prec.seg3 > 0", alpha=0.025)
+hypothesis(face_ad_y_tl_m1, "outcode1:prec.seg4 > 0", alpha=0.025)
+hypothesis(face_ad_y_tl_m1, "outcode1:prec.seg5 > 0", alpha=0.025)
+hypothesis(face_ad_y_tl_m1, "(Intercept - (outcode1:prec.seg1 + outcode1:prec.seg2 + outcode1:prec.seg3 + outcode1:prec.seg4 + outcode1:prec.seg5)) > 0", alpha=0.025)
+```
+
+### Following segment
+Following segment:
+```{r}
+face_ad_y_tl_m1 %>%
+  emmeans( ~ following | outcode) %>%
+  gather_emmeans_draws() %>%
+  ggplot(aes(x = reorder(following, .value, median), y = .value, fill=outcode)) +
+  geom_eye(.width = c(.95)) +
+  stat_summary(aes(group = outcode), fun.y = mean, geom = "line") +
+  facet_grid(~ outcode) +
+  theme_light() + 
+  scale_fill_manual(values = c("gray80", "skyblue")) + 
+  xlab(NULL) + ylab("Posterior predicted log(TL) z-score") +
+  theme(legend.position="none",
+        axis.text.x = element_text(size=rel(1.1), angle=45, hjust=1),
+        axis.text = element_text(size=rel(1.1)),
+        axis.title.y = element_text(size=rel(1.1)),
+        strip.text=element_text(size=rel(1.1)))
+```
+
+```{r}
+emmeans(face_ad_y_tl_m1, ~ following)
+```
+
+
+
+Effect of followng voiceless:
+```{r}
+hypothesis(face_ad_y_tl_m1, "following1 > 0", alpha=0.025)
+hypothesis(face_ad_y_tl_m1, "following2 > 0", alpha=0.025)
+hypothesis(face_ad_y_tl_m1, "following3 > 0", alpha=0.025)
+hypothesis(face_ad_y_tl_m1, "following4 > 0", alpha=0.025)
+#hypothesis(face_ad_f1_m1, "prec.seg5 > 0", alpha=0.025)
+hypothesis(face_ad_y_tl_m1, "(Intercept - (following1 + following2 + following3 + following4 )) > 0", alpha=0.025)
+```
+
+Interaction of outcode and following voiceless:
+```{r}
+hypothesis(face_ad_y_tl_m1, "outcode1:following1 > 0", alpha=0.025)
+hypothesis(face_ad_y_tl_m1, "outcode1:following2 > 0", alpha=0.025)
+hypothesis(face_ad_y_tl_m1, "outcode1:following3 > 0", alpha=0.025)
+hypothesis(face_ad_y_tl_m1, "outcode1:following4 > 0", alpha=0.025)
+#hypothesis(face_ad_f1_m1, "CofP1:prec.seg5 > 0", alpha=0.025)
+hypothesis(face_ad_y_tl_m1, "(Intercept - (outcode1:following1 + outcode1:following2 + outcode1:following3 + outcode1:following4)) > 0", alpha=0.025)
+```
+
+
+### Random intercepts
+
+Word random intercepts, using the "frequent words" vector we created earlier:
+```{r}
+face_ad_y_tl_m1 %>%
+  spread_draws(b_Intercept, r_word[word,term]) %>%
+  filter(word %in% face_fr_words) %>% 
+  #head(10)
+  filter(term == "Intercept") %>% 
+  mutate(word_median = r_word) %>%
+ # median_hdi(participant_median = b_Intercept + r_participant) %>%
+  ggplot(aes(y = reorder(word, word_median), x = word_median)) +
+  geom_halfeyeh(point_interval=median_hdi, .width=0.95) + geom_vline(xintercept=0, lty=2, color="red")
+```
+
+
+Participant random intercepts
+```{r}
+face_ad_y_tl_m1 %>%
+  spread_draws(b_Intercept, r_participant[participant,term]) %>%
+  #head(10)
+  filter(term == "Intercept") %>% 
+  mutate(participant_median = r_participant) %>%
+  #median_hdi(participant_median = b_Intercept + r_participant) %>%
+  ggplot(aes(y = reorder(participant, participant_median), x = participant_median)) +
+  geom_halfeyeh(point_interval=median_hdi, .width=0.95) + geom_vline(xintercept=0, lty=2, color="red")
+```
+CB is very monophthongal.
+
+
+## Studio model
+
+### sum-code factors
+
+The factors are: task, sex, ethnoling, CofP, outcode, following seg, prec.seg
+
+Dummy-code task and set reference to interview. This is because more than a thousand tokens are interview, and only 72 are reading!
+```{r}
+table(face_ad_studio$task)
+#price_ad_youthclub$task <- as.factor(price_ad_youthclub$task)
+#price_ad_youthclub$task <- relevel(price_ad_youthclub$task, ref="interview")
+#table(price_ad_youthclub$task)
+```
+
+Outcode:
+```{r}
+table(face_ad_studio$outcode)
+face_ad_studio$outcode <- factor(face_ad_studio$outcode)
+contrasts(face_ad_studio$outcode) <- contr.sum(2)
+contrasts(face_ad_studio$outcode)
+```
+Prec.seg:
+```{r}
+
+table(face_ad_studio$outcode, face_ad_studio$prec.seg)
+
+face_ad_studio$prec.seg <- as.factor(face_ad_studio$prec.seg)
+contrasts(face_ad_studio$prec.seg) <- contr.sum(6)
+contrasts(face_ad_studio$prec.seg)
+```
+
+
+
+Following seg:
+```{r}
+
+table(face_ad_studio$outcode, face_ad_studio$following)
+
+
+face_ad_studio$following <- as.factor(face_ad_studio$following)
+contrasts(face_ad_studio$following) <- contr.sum(5)
+contrasts(face_ad_studio$following)
+```
+
+### log-transform TL
+```{r}
+face_ad_studio <- face_ad_studio %>% mutate(
+  LogTL = log(norm_TL)
+)
+```
+
+
+### set priors
+Get range of the dependent variable:
+```{r}
+summary(face_ad_studio$LogTL)
+max(face_ad_studio$LogTL)-min(face_ad_studio$LogTL)
+sd(face_ad_studio$LogTL)
+```
+
+```{r}
+my_priors3 <- c(
+  set_prior("normal(0, 3)", class = "Intercept"), # intercept
+  set_prior("normal(0, 3)", class = "b"), # beta
+  #set_prior("normal(0, 1)", class = "sd"), # st. dev. of random effects
+  #set_prior("normal(0, 1)", class = "sigma"), # sigma (overall error)
+  set_prior("lkj(2)", class = "cor") # random effects correlation matrix
+)
+#Defaults:
+#lkj(1) - cor
+#student_t(3, 0, 10) Intercept
+#student_t(3, 0, 10) sd
+# student_t(3, 0, 10) sigma
+```
+
+### Check for outliers
+```{r}
+ggplot(face_ad_studio, aes(x=LogTL))+geom_histogram(bins=100) +theme_minimal()
+```
+
+#### z-score the continuous variables
+```{r}
+face_ad_studio <- face_ad_studio %>% mutate(
+  LogDurZ = scale(LogDur, center = TRUE),
+  LogTLz = scale(LogTL, center = TRUE)
+)
+```
+
+Plot these to check it worked:
+```{r}
+ggplot(face_ad_studio, aes(x=LogTL))+geom_histogram()+theme_minimal()
+ggplot(face_ad_studio, aes(x=LogTLz))+geom_histogram()+theme_minimal() + geom_vline(xintercept=2) + geom_vline(xintercept=-2)
+```
+Looks pretty good.
+
+### Run the model
+
+```{r}
+set.seed(16)
+#face_ad_st_tl_m1 <- brm(LogTLz ~ LogDurZ +
+ #                         outcode*task +
+  #                     outcode*prec.seg +
+   #                      outcode*following +
+    #                   (1 + prec.seg + following + task | participant) + 
+     #                (1|word), data = face_ad_studio,
+      #               prior = my_priors3,
+       #              control = list(adapt_delta = 0.99),
+        #    file="models/face_ad_st_tl_m1")
+```
+### Load model
+```{r}
+face_ad_st_tl_m1 <- read_rds("models/face_ad_st_tl_m1.rds")
+```
+
+### PP check
+```{r}
+pp_check(face_ad_st_tl_m1, nsamples=100)
+```
+Bit lumpy and bumpy.
+
+### Model summary
+```{r}
+(face_ad_st_tl_sum <- parameters::model_parameters(face_ad_st_tl_m1, ci=0.95, ci_method="hdi", effects="fixed"))
+```
+
+### Stanplot
+
+```{r}
+stanplot(face_ad_st_tl_m1, type="intervals",  pars = "^b", prob = 0.9, prob_outer=0.95)
+```
+
+
+### Preceding segment
+
+Preceding segment:
+```{r}
+face_ad_st_tl_m1 %>%
+  emmeans( ~ prec.seg | outcode) %>%
+  gather_emmeans_draws() %>%
+  ggplot(aes(x = reorder(prec.seg, .value, median), y = .value, fill=outcode)) +
+  geom_eye(.width = c(.95)) +
+  stat_summary(aes(group = outcode), fun.y = mean, geom = "line") +
+  facet_grid(~ outcode) +
+  theme_light() + 
+  scale_fill_manual(values = c("gray80", "skyblue")) + 
+  xlab(NULL) + ylab("Posterior predicted log(TL) z-score") +
+  theme(legend.position="none",
+        axis.text.x = element_text(size=rel(1.1), angle=45, hjust=1),
+        axis.text = element_text(size=rel(1.1)),
+        axis.title.y = element_text(size=rel(1.1)),
+        strip.text=element_text(size=rel(1.1))) #+ scale_y_reverse()
+```
+
+
+```{r}
+emmeans(face_ad_st_tl_m1, ~ prec.seg)
+```
+
+
+
+Effect of preceding velar:
+```{r}
+hypothesis(face_ad_st_tl_m1, "prec.seg1 > 0", alpha=0.025)
+hypothesis(face_ad_st_tl_m1, "prec.seg2 > 0", alpha=0.025)
+hypothesis(face_ad_st_tl_m1, "prec.seg3 > 0", alpha=0.025)
+hypothesis(face_ad_st_tl_m1, "prec.seg4 > 0", alpha=0.025)
+hypothesis(face_ad_st_tl_m1, "prec.seg5 > 0", alpha=0.025)
+hypothesis(face_ad_st_tl_m1, "(Intercept - (prec.seg1 + prec.seg2 + prec.seg3 + prec.seg4 + prec.seg5)) > 0", alpha=0.025)
+```
+
+Interaction of CofP and preceding velar:
+```{r}
+hypothesis(face_ad_st_tl_m1, "outcode1:prec.seg1 > 0", alpha=0.025)
+hypothesis(face_ad_st_tl_m1, "outcode1:prec.seg2 > 0", alpha=0.025)
+hypothesis(face_ad_st_tl_m1, "outcode1:prec.seg3 > 0", alpha=0.025)
+hypothesis(face_ad_st_tl_m1, "outcode1:prec.seg4 > 0", alpha=0.025)
+hypothesis(face_ad_st_tl_m1, "outcode1:prec.seg5 > 0", alpha=0.025)
+hypothesis(face_ad_st_tl_m1, "(Intercept - (outcode1:prec.seg1 + outcode1:prec.seg2 + outcode1:prec.seg3 + outcode1:prec.seg4 + outcode1:prec.seg5)) > 0", alpha=0.025)
+```
+
+### Following segment
+Following segment:
+```{r}
+face_ad_st_tl_m1 %>%
+  emmeans( ~ following | outcode) %>%
+  gather_emmeans_draws() %>%
+  ggplot(aes(x = reorder(following, .value, median), y = .value, fill=outcode)) +
+  geom_eye(.width = c(.95)) +
+  stat_summary(aes(group = outcode), fun.y = mean, geom = "line") +
+  facet_grid(~ outcode) +
+  theme_light() + 
+  scale_fill_manual(values = c("gray80", "skyblue")) + 
+  xlab(NULL) + ylab("Posterior predicted log(TL) z-score") +
+  theme(legend.position="none",
+        axis.text.x = element_text(size=rel(1.1), angle=45, hjust=1),
+        axis.text = element_text(size=rel(1.1)),
+        axis.title.y = element_text(size=rel(1.1)),
+        strip.text=element_text(size=rel(1.1)))
+```
+
+
+```{r}
+emmeans(face_ad_st_tl_m1, ~ following)
+```
+
+
+
+Effect of followng voiceless:
+```{r}
+hypothesis(face_ad_st_tl_m1, "following1 > 0", alpha=0.025)
+hypothesis(face_ad_st_tl_m1, "following2 > 0", alpha=0.025)
+hypothesis(face_ad_st_tl_m1, "following3 > 0", alpha=0.025)
+hypothesis(face_ad_st_tl_m1, "following4 > 0", alpha=0.025)
+#hypothesis(face_ad_f1_m1, "prec.seg5 > 0", alpha=0.025)
+hypothesis(face_ad_st_tl_m1, "(Intercept - (following1 + following2 + following3 + following4 )) > 0", alpha=0.025)
+```
+
+Interaction of outcode and following voiceless:
+```{r}
+hypothesis(face_ad_st_tl_m1, "outcode1:following1 > 0", alpha=0.025)
+hypothesis(face_ad_st_tl_m1, "outcode1:following2 > 0", alpha=0.025)
+hypothesis(face_ad_st_tl_m1, "outcode1:following3 > 0", alpha=0.025)
+hypothesis(face_ad_st_tl_m1, "outcode1:following4 > 0", alpha=0.025)
+#hypothesis(face_ad_f1_m1, "CofP1:prec.seg5 > 0", alpha=0.025)
+hypothesis(face_ad_st_tl_m1, "(Intercept - (outcode1:following1 + outcode1:following2 + outcode1:following3 + outcode1:following4)) > 0", alpha=0.025)
+```
+
+### Random intercepts
+
+
+Participant random intercepts
+```{r}
+face_ad_st_tl_m1 %>%
+  spread_draws(b_Intercept, r_participant[participant,term]) %>%
+  #head(10)
+  filter(term == "Intercept") %>% 
+  mutate(participant_median = r_participant) %>%
+  #median_hdi(participant_median = b_Intercept + r_participant) %>%
+  ggplot(aes(y = participant, x = participant_median)) +
+  geom_halfeyeh(point_interval=median_hdi, .width=0.95) + geom_vline(xintercept=0, lty=2, color="red")
+```
+So Daniel is the most monophthongal.
+
+Word random intercepts, using the "frequent words" vector we created earlier:
+```{r}
+face_ad_st_tl_m1 %>%
+  spread_draws(b_Intercept, r_word[word,term]) %>%
+  filter(word %in% face_fr_words) %>% 
+  #head(10)
+  filter(term == "Intercept") %>% 
+  mutate(word_median = r_word) %>%
+ # median_hdi(participant_median = b_Intercept + r_participant) %>%
+  ggplot(aes(y = reorder(word, word_median), x = word_median)) +
+  geom_halfeyeh(point_interval=median_hdi, .width=0.95) + geom_vline(xintercept=0, lty=2, color="red")
+```
+
