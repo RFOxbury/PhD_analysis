@@ -1,0 +1,799 @@
+---
+title: "Variation in the PRICE vowel in the adolescent data"
+author: "Rosie Oxbury"
+date: "April 2020"
+output:
+  html_notebook:
+    number_sections: yes
+    toc: yes
+    toc_depth: 3
+    toc_float: yes
+  pdf_document:
+    toc: yes
+    toc_depth: '3'
+---
+Load the packages we will need:
+```{r}
+library(tidyverse)
+library(brms)
+library(sjstats)
+library(bayesplot)
+library(bayestestR)
+library(emmeans)
+library(cowplot)
+library(tidybayes)
+```
+# Load data
+Load the adolescent FACE, PRICE and GOAT data. Import "data_separated/price_ad.csv"
+```{r}
+price_ad <- read_csv("data_separated/price_ad.csv")
+face_ad <- read_csv("data_separated/face_ad.csv")
+goat_ad <- read_csv("data_separated/goat_ad.csv")
+```
+
+Separate PRICE and *like*. Check how many different words are in the dataset beginning "lik...":
+```{r}
+price_ad %>% filter(str_detect(word, "^LIK")) %>% group_by(word) %>% summarise(counts = n())
+```
+All of these should go into the *like* dataset, and be removed from the PRICE dataset.
+```{r}
+like_ad <- price_ad %>% filter(str_detect(word, "^LIK"))
+price_ad <- price_ad %>% filter(!str_detect(word, "^LIK"))
+```
+
+Create list of dataframes:
+```{r}
+data <- list("price" = price_ad,
+             "like" = like_ad)
+```
+
+
+# PRICE analysis
+EDA checklist:
+
+- check for NAs
+
+- outliers, for all timepoints, both F1 and F2
+
+
+- relevel preceding segment
+
+- ~~no preceding nasal or approximant~~
+
+- relevel following segment
+
+- check frequent words
+
+Check for NAs first
+
+```{r}
+norm_formants <- c("normF1_20",
+                   "normF1_35",
+                   "normF1_50",
+                   "normF1_65",
+                   "normF1_80",
+                   "normF2_20",
+                   "normF2_35",
+                   "normF2_50",
+                   "normF2_65",
+                   "normF2_80",
+                   "norm_TL"
+                   )
+
+for(i in data){
+  print(
+  i %>% filter_at(vars(norm_formants), any_vars(is.na(.)))
+  )
+}
+```
+
+Get rid of the NA:
+```{r}
+data <- map(
+  data,
+  ~ filter_at(.x, vars(norm_formants), any_vars(!is.na(.)))
+)
+```
+Check whether this worked:
+```{r}
+lapply(data, nrow)
+```
+
+
+
+Check for outliers:
+```{r}
+#map(data,
+ #   ~ select(.x, vars(norm_formants)) %>% ggplot(aes())
+  #              )
+for(i in data){
+  for(col in norm_formants){
+ print(
+  ggplot(i, aes(get(col))) + 
+      geom_histogram(bins=100) + 
+    xlab(col)  #+
+      #geom_vline(xintercept=mean(price_ad$col)-3*sd(price_ad$col))
+  )
+    }}
+```
+
+```{r}
+data$like <- data$like %>% filter(
+  normF1_80 < 2
+)
+```
+
+```{r}
+lapply(data, nrow)
+```
+
+## relevel following segment
+
+```{r}
+table(data$price$syl.type)
+```
+```{r}
+data$price %>% filter(syl.type=="either") %>% group_by(word) %>% summarise(unicorn=n()) %>% arrange(desc(unicorn))
+```
+
+```{r}
+data$price <- data$price %>% mutate(
+  syl.type2 = ifelse(
+    syl.type=="closed", "closed",
+    ifelse(
+      syl.type=="coda.nasal", "coda.nasal",
+      ifelse(
+        syl.type=="final.open", "final.open",
+        ifelse(syl.type=="medial.open", "medial.open",
+               ifelse(syl.type=="either" & word=="DAYLIGHT", "closed",
+                      ifelse(
+                        syl.type=="either" & word %in% c("MICROPHONE", "NICELY"), "medial.open",
+                        ifelse(syl.type=="either" & word=="NOTIFY", "final.open", "other")
+                        )
+                      )))
+      )
+    )
+  )
+```
+
+Check how this worked:
+```{r}
+table(data$price$syl.type)
+table(data$price$syl.type2)
+```
+
+Find out what the relevant coda segments are:
+```{r}
+closed_price <- data$price %>% filter(syl.type2=="closed")
+
+closed_price$fol.phonOLOG.seg <- as.factor(closed_price$fol.phonOLOG.seg)
+
+table(droplevels(closed_price$fol.phonOLOG.seg))
+```
+
+Define vectors according to voicing/manner:
+```{r}
+voiced <-  c("b", "d",  "dz", "v", "vz", "z", "zd")
+voiceless <- c("f", "fs", "k", "ks", "p", "ps", "pt", "s", "t", "ts", "tʃ", "tθ")
+nasal <- c("n")
+other <- c("?", "l")
+```
+
+Create the variable:
+```{r}
+data$price <- data$price %>% mutate(
+  following = ifelse(
+    syl.type2 =="coda.nasal", "coda.nasal",
+    ifelse(
+      syl.type2=="final.open", "final.open",
+      ifelse(
+        syl.type2=="medial.open", "medial.open",
+        ifelse(
+          syl.type2=="closed" & fol.phonOLOG.seg %in% voiced,
+          "voiced",
+          ifelse(
+            syl.type2=="closed" & fol.phonOLOG.seg %in% voiceless,
+            "voiceless",
+            ifelse(
+              syl.type2=="closed" & fol.phonOLOG.seg %in% nasal, "coda.nasal", "other"
+            )
+          )
+        )
+      )
+    )
+  )
+)
+```
+
+Check the output
+```{r}
+table(data$price$following)
+```
+Filter out "other":
+
+```{r}
+data$price <- data$price %>% filter(following!="other")
+```
+Lovely.
+## Relevel preceding segment
+```{r}
+table(data$price$prec.seg)
+```
+
+I'll probably put other, vowel and zero together.
+
+
+## Check frequent words
+Check which words are most frequent
+```{r}
+data$price %>% 
+  group_by(word) %>% 
+  summarise(number = n()) %>% 
+  arrange(desc(number))
+```
+Leaving all these as they are for now.
+
+## Log-transform duration
+
+Check distribution:
+```{r}
+ggplot(data$price, aes(x=duration))+geom_histogram(bins=100)+theme_minimal()
+ggplot(data$like, aes(x=duration))+geom_histogram(bins=100)+theme_minimal()
+```
+
+Taking the natural log, cos that's what other studies do and say is standard.
+```{r}
+data <- map(data,
+    ~ mutate(.x,
+  LogDur = log(duration)
+))
+```
+
+Check that it worked:
+```{r}
+ggplot(data$price, aes(x=duration))+geom_histogram(bins=100)+theme_minimal()
+ggplot(data$price, aes(x=LogDur))+geom_histogram(bins=100)+theme_minimal()
+ggplot(data$like, aes(x=duration))+geom_histogram(bins=100)+theme_minimal()
+ggplot(data$like, aes(x=LogDur))+geom_histogram(bins=100)+theme_minimal()
+```
+A bit skewed. Cut out outliers:
+```{r}
+data$price <- data$price %>% filter(LogDur < -1)
+```
+
+## Modelling
+We need to:
+
+- exclude wordlist data
+
+- sum-code factors
+
+- set priors
+
+- z-score the continuous variables
+
+### Task
+```{r}
+table(data$price$task)
+table(data$like$task)
+```
+Lump reading and wordlist together:
+```{r}
+data <- map(data,
+    ~ mutate(.x,
+      task = as.factor(task)
+      #levels(task) <- c("interview", "read.speech", "read.speech")
+    ))
+
+#price_ad5$task <- as.factor(price_ad5$task)
+levels(data$price$task) <- c("interview", "read.speech", "read.speech")
+levels(data$like$task) <- c("interview", "read.speech", "read.speech")
+```
+
+
+### sum-code factors
+
+The factors are: task, sex, CofP, outcode, following seg, prec.seg
+
+Dummy-code task and set reference to interview.
+```{r}
+data <- map(data,
+            ~mutate(.x,
+                    task = relevel(task, ref="interview")
+                    ))
+
+table(data$price$task)
+table(data$like$task)
+```
+
+In fact, make all of the other factors factors:
+```{r}
+data <- map(data,
+    ~ mutate(.x,
+      sex = as.factor(sex),
+      CofP = as.factor(CofP),
+      outcode = as.factor(outcode)
+      #levels(task) <- c("interview", "read.speech", "read.speech")
+    ))
+```
+
+
+Sex:
+```{r}
+contrasts(data$price$sex) <- contr.sum(2)
+contrasts(data$price$sex)
+
+contrasts(data$like$sex) <- contr.sum(2)
+contrasts(data$like$sex)
+```
+CofP:
+```{r}
+contrasts(data$price$CofP) <- contr.sum(2)
+contrasts(data$price$CofP)
+
+contrasts(data$like$CofP) <- contr.sum(2)
+contrasts(data$like$CofP)
+```
+Outcode:
+```{r}
+contrasts(data$price$outcode) <- contr.sum(3)
+contrasts(data$price$outcode)
+
+contrasts(data$like$outcode) <- contr.sum(3)
+contrasts(data$like$outcode)
+```
+
+
+Prec.seg:
+```{r}
+table(data$price$prec.seg)
+data$price$prec.seg <- as.factor(data$price$prec.seg)
+#contrasts(goat_ad$prec.seg) <- contr.sum(8)
+#contrasts(goat_ad$prec.seg)
+```
+Relevel:
+```{r}
+levels(data$price$prec.seg) <- c("approx.glide",
+                              "coronal",
+                              "labial",
+                              "nasal",
+                              "other",
+                              "velar",
+                              "other",
+                              "other" )
+```
+Carry on with prec.seg:
+```{r}
+table(data$price$prec.seg)
+#face_ad$prec.seg <- as.factor(face_ad$prec.seg)
+contrasts(data$price$prec.seg) <- contr.sum(6)
+contrasts(data$price$prec.seg)
+```
+
+Find out the most frequent words in each preceding environment category
+```{r}
+precseg_levels <- levels(data$price$prec.seg)
+```
+
+```{r}
+#length(precseg_levels)
+
+for(i in precseg_levels){
+  print(
+    data$price %>% filter(prec.seg==i) %>% 
+      group_by(word) %>% 
+      summarise(tokens = n()) %>% 
+      arrange(desc(tokens))
+    )
+}
+```
+
+
+Following seg:
+
+```{r}
+table(data$price$following)
+data$price$following <- as.factor(data$price$following)
+contrasts(data$price$following) <- contr.sum(5)
+contrasts(data$price$following)
+```
+Find out the most frequent words in each following environment category
+```{r}
+following_levels <- levels(data$price$following)
+```
+
+```{r}
+#length(precseg_levels)
+
+for(i in following_levels){
+  print(
+    data$price %>% filter(following==i) %>% 
+      group_by(word) %>% 
+      summarise(tokens = n()) %>% 
+      arrange(desc(tokens))
+    )
+}
+```
+
+
+### set priors
+
+
+```{r}
+my_priors3 <- c(
+  set_prior("normal(0, 3)", class = "Intercept"), # intercept
+  set_prior("normal(0, 3)", class = "b"), # beta
+  #set_prior("normal(0, 1)", class = "sd"), # st. dev. of random effects
+  #set_prior("normal(0, 1)", class = "sigma"), # sigma (overall error)
+  set_prior("lkj(2)", class = "cor") # random effects correlation matrix
+)
+#Defaults:
+#lkj(1) - cor
+#student_t(3, 0, 10) Intercept
+#student_t(3, 0, 10) sd
+# student_t(3, 0, 10) sigma
+```
+
+
+### z-score the continuous variables
+
+```{r}
+data <- map(data,
+            ~ mutate(.x,
+              normF2_20z = scale(normF2_20, center = TRUE),
+              LogDurZ = scale(LogDur, center = TRUE)
+            ))
+```
+
+
+Plot these to check it worked:
+```{r}
+vars <- c("normF2_20", "normF2_20z", "LogDur", "LogDurZ")
+
+for(i in vars){
+  print(
+  ggplot(data$price, aes(x=get(i)))+geom_histogram()+theme_minimal() + 
+    #geom_vline(xintercept=2) + 
+    #geom_vline(xintercept=-2) +
+    xlab(i)
+  )
+}
+
+for(i in vars){
+  print(
+  ggplot(data$like, aes(x=get(i)))+geom_histogram()+theme_minimal() + 
+    #geom_vline(xintercept=2) + 
+    #geom_vline(xintercept=-2) +
+    xlab(i)
+  )
+}
+```
+Looks good.
+
+### Run the models: onset F2
+Models with:
+
+- CofP
+
+- outcode
+
+- sex
+
+... to see which is the best predictor.
+
+
+
+
+```{r}
+set.seed(56)
+
+# CofP
+#price_ad_f2_m_CofP <- brm(normF2_20z ~ LogDurZ +   
+  #                     CofP*prec.seg +
+   #                        CofP*following +
+    #                     CofP*task +
+     #                  (1 + prec.seg + following + task| participant) + 
+      #               (1+ CofP|word), data = data$price,
+       #              prior = my_priors3,
+        #             control = list(adapt_delta = 0.99),
+         #            sample_prior=TRUE,
+          #  file="models/price_ad_f2_m_CofP")
+
+# outcode
+#price_ad_f2_m_outcode <- brm(normF2_20z ~ LogDurZ +   
+ #                      outcode*prec.seg +
+  #                         outcode*following +
+   #                      outcode*task +
+    #                   (1 + prec.seg + following + task| participant) + 
+     #                (1+ outcode|word), data = data$price,
+      #               prior = my_priors3,
+       #              control = list(adapt_delta = 0.99),
+        #             sample_prior=TRUE,
+         #   file="models/price_ad_f2_m_outcode")
+
+# Sex
+#price_ad_f2_m_sex <- brm(normF2_20z ~ LogDurZ +   
+ #                      sex*prec.seg +
+  #                         sex*following +
+   #                      sex*task +
+    #                   (1 + prec.seg + following + task| participant) + 
+     #                (1+ sex|word), data = data$price,
+      #               prior = my_priors3,
+       #              control = list(adapt_delta = 0.99),
+        #             sample_prior=TRUE,
+         #   file="models/price_ad_f2_m_sex")
+```
+Get rid of task for the *like* models:
+
+```{r}
+table(data$like$task)
+```
+
+```{r}
+lapply(data, nrow)
+data$like <- data$like %>% filter(task=="interview")
+
+lapply(data, nrow)
+```
+
+Try "get prior"
+```{r}
+get_prior(normF2_20z ~ LogDurZ +   
+                         CofP +
+                       (1 | participant),
+                       data = data$like)
+```
+Set priors for "like":
+```{r}
+my_priors_like <- c(
+  set_prior("normal(0, 3)", class = "Intercept"), # intercept
+  set_prior("normal(0, 3)", class = "b") # beta
+  #set_prior("normal(0, 1)", class = "sd"), # st. dev. of random effects
+  #set_prior("normal(0, 1)", class = "sigma"), # sigma (overall error)
+  #set_prior("lkj(2)", class = "cor") # random effects correlation matrix
+)
+```
+
+
+```{r}
+# CofP
+like_ad_f2_m_CofP <- brm(normF2_20z ~ LogDurZ +   
+                         CofP +
+                       (1 | participant),
+                       data = data$like,
+                     prior = my_priors_like,
+                     control = list(adapt_delta = 0.99),
+                     sample_prior=TRUE,
+            file="models/like_ad_f2_m_CofP")
+
+# outcode
+like_ad_f2_m_outcode <- brm(normF2_20z ~ LogDurZ +   
+                         outcode +
+                       (1| participant),
+                       data = data$like,
+                     prior = my_priors_like,
+                     control = list(adapt_delta = 0.99),
+                     sample_prior=TRUE,
+            file="models/like_ad_f2_m_outcode")
+
+# Sex
+like_ad_f2_m_sex <- brm(normF2_20z ~ LogDurZ +   
+                         sex +
+                       (1| participant),
+                       data = data$like,
+                     prior = my_priors_like,
+                     control = list(adapt_delta = 0.99),
+                     sample_prior=TRUE,
+            file="models/like_ad_f2_m_sex")
+```
+
+
+### Run the models: Trajectory Length
+
+Check distribution of Trajectory Length
+```{r}
+map(data,
+    ~ ggplot(.x, aes(x=norm_TL))+geom_histogram(bins=100)
+    )
+#ggplot(data$price, aes(x=norm_TL))+geom_histogram(bins=100)
+#ggplot(data$like, aes(x=norm_TL))+geom_histogram(bins=100)
+```
+Log-transform the dependent variable:
+```{r}
+data <- map(data,
+            ~ mutate(.x,
+                     LogTL = log(norm_TL)))
+```
+
+Check the distribution of this new variable:
+```{r}
+map(data,
+    ~ ggplot(.x, aes(x=LogTL))+geom_histogram(bins=100)
+    )
+```
+Not totally normal but it will do.
+
+Vector of predictor variables:
+```{r}
+predictors <- c("CofP",
+                "outcode",
+                "sex",
+                "prec.seg",
+                "task",
+                "following")
+```
+Check that the contrasts for each variable are OK:
+```{r}
+map(data$price[,predictors], contrasts)
+map(data$like[,c("CofP",
+                "outcode",
+                "sex")], contrasts)
+```
+Great.
+
+Z-score the continuous variables:
+```{r}
+data <- map(data,
+            ~ mutate(.x,
+                     LogTLz = scale(LogTL, center = TRUE),
+    LogDurZ = scale(LogDur, center = TRUE)))
+```
+
+Check the distribution of each of these to see that it worked:
+```{r}
+vars <- c("norm_TL",
+          "LogTL",
+          "LogTLz",
+          "duration",
+          "LogDur", "LogDurZ")
+
+for(i in vars){
+  print(
+  ggplot(data$price, aes(x=get(i)))+geom_histogram(bins=100)+theme_minimal() + 
+    #geom_vline(xintercept=2) + 
+    #geom_vline(xintercept=-2) +
+    xlab(i)
+  )
+}
+
+for(i in vars){
+  print(
+  ggplot(data$like, aes(x=get(i)))+geom_histogram(bins=100)+theme_minimal() + 
+    #geom_vline(xintercept=2) + 
+    #geom_vline(xintercept=-2) +
+    xlab(i)
+  )
+}
+```
+
+```{r}
+table(data$price$participant,data$price$task)
+```
+
+
+Run the modelsfor PRICE Trajectory Length:
+```{r}
+set.seed(48)
+
+# CofP
+price_ad_tl_m_CofP <- brm(LogTLz ~ LogDurZ +   
+                       CofP*prec.seg +
+                           CofP*following +
+                         CofP*task +
+                       (1 + prec.seg + following + task| participant) + 
+                     (1+ CofP|word), data = data$price,
+                     prior = my_priors3,
+                     control = list(adapt_delta = 0.99),
+                     sample_prior=TRUE,
+            file="models/price_ad_tl_m_CofP")
+
+# outcode
+price_ad_tl_m_outcode <- brm(LogTLz ~ LogDurZ +   
+                       outcode*prec.seg +
+                           outcode*following +
+                         outcode*task +
+                       (1 + prec.seg + following + task| participant) + 
+                     (1+ outcode|word), data = data$price,
+                     prior = my_priors3,
+                     control = list(adapt_delta = 0.99),
+                     sample_prior=TRUE,
+            file="models/price_ad_tl_m_outcode")
+
+# Sex
+price_ad_tl_m_sex <- brm(LogTLz ~ LogDurZ +   
+                       sex*prec.seg +
+                           sex*following +
+                         sex*task +
+                       (1 + prec.seg + following + task| participant) + 
+                     (1+ sex|word), data = data$price,
+                     prior = my_priors3,
+                     control = list(adapt_delta = 0.99),
+                     sample_prior=TRUE,
+            file="models/price_ad_tl_m_sex")
+```
+
+And the models for *like*:
+```{r}
+set.seed(16)
+# CofP
+like_ad_tl_m_CofP <- brm(LogTLz ~ LogDurZ +   
+                         CofP +
+                       (1 | participant),
+                       data = data$like,
+                     prior = my_priors_like,
+                     control = list(adapt_delta = 0.99),
+                     sample_prior=TRUE,
+            file="models/like_ad_f2_m_CofP")
+
+# outcode
+like_ad_tl_m_outcode <- brm(LogTLz ~ LogDurZ +   
+                         outcode +
+                       (1| participant),
+                       data = data$like,
+                     prior = my_priors_like,
+                     control = list(adapt_delta = 0.99),
+                     sample_prior=TRUE,
+            file="models/like_ad_tl_m_outcode")
+
+# Sex
+like_ad_tl_m_sex <- brm(LogTLz ~ LogDurZ +   
+                         sex +
+                       (1| participant),
+                       data = data$like,
+                     prior = my_priors_like,
+                     control = list(adapt_delta = 0.99),
+                     sample_prior=TRUE,
+            file="models/like_ad_tl_m_sex")
+```
+
+### PP check
+Create lists of models, one per dependent variable:
+```{r}
+models_price_f2 <- list(price_ad_f2_m_CofP, price_ad_f2_m_outcode, price_ad_f2_m_sex)
+models_like_f2 <- list(like_ad_f2_m_CofP, like_ad_f2_m_outcode,like_ad_f2_m_sex)
+#models_tl <- list(price_ad_tl_m_CofP, price_ad_tl_m_outcode, price_ad_tl_m_sex)
+```
+
+Print posterior check:
+```{r}
+lapply(models_price_f2, pp_check, nsamples=100)
+lapply(models_like_f2, pp_check, nsamples=100)
+#lapply(models_tl, pp_check, nsamples=100)
+```
+They all look like an OK fit. The TL models slightly less so.
+## Model selection
+
+### Select the F2 model
+```{r}
+(price_f2_loos <- lapply(models_price_f2, loo))
+(like_f2_loos <- lapply(models_like_f2, loo))
+```
+There's basically nothing to choose between in the *like* models.
+
+With the PRICE models, the 3rd one -- i.e. the one with just sex -- fits best.
+
+```{r}
+lapply(price_f2_loos, plot)
+```
+
+So the third model, the one with sex, fits the best.
+
+### Select the TL model
+```{r}
+lapply(models_tl, loo)
+```
+The one with sex is marginally better than the others.
+
+### Create list of final models
+```{r}
+final_models <- list(price_ad_f2_m_sex, price_ad_tl_m_sex)
+```
+
+## Model summaries
+```{r}
+lapply(final_models, parameters::model_parameters, ci=0.95, ci_method="hdi", effects="fixed")
+```
+
+And interval plots:
+
+# LIKE
