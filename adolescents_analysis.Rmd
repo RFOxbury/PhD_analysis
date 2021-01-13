@@ -1,0 +1,1372 @@
+---
+title: "Variation in the FACE, PRICE and GOAT diphthongs in the adolescent data"
+author: "Rosie Oxbury"
+date: "January 2021"
+output:
+  html_notebook:
+    number_sections: yes
+    toc: yes
+    toc_depth: 3
+    toc_float: yes
+  pdf_document:
+    toc: yes
+    toc_depth: '3'
+---
+Load the packages we will need:
+```{r}
+library(tidyverse)
+library(brms)
+library(sjstats)
+library(bayesplot)
+library(bayestestR)
+library(emmeans)
+library(cowplot)
+library(tidybayes)
+```
+# Load data
+Load the adolescent FACE, PRICE and GOAT data. Import "data_separated/price_ad.csv"
+
+```{r}
+file_names <- list.files(path="data_separated")
+
+data <- list()
+
+for(i in 1:length(file_names)){
+  name = paste("data_separated/", file_names[i], sep="")
+  print(name)
+  data[[file_names[i]]] <- read_csv(name)
+  
+}
+
+#file.names <- dir(path, pattern =".rds")
+
+#file.names
+```
+Check that this worked:
+```{r}
+typeof(data[[2]])
+```
+Give names to the files in the list?
+```{r}
+real_names <- list.files(path="data_separated")
+
+real_names2 <- str_replace(real_names, "\\.csv$", "")
+
+names(data) <- real_names2
+```
+
+Check that this worked:
+```{r}
+names(data)
+
+lapply(data, nrow)
+```
+
+Separate PRICE and *like*. Check how many different words are in the dataset beginning "lik...":
+```{r}
+data$price_ad %>% filter(str_detect(word, "^LIK")) %>% group_by(word) %>% summarise(counts = n())
+```
+All of these should go into the *like* dataset, and be removed from the PRICE dataset.
+```{r}
+data$like_ad <- data$price_ad %>% filter(str_detect(word, "^LIK"))
+data$price_ad <- data$price_ad %>% filter(!str_detect(word, "^LIK"))
+```
+
+Check number of rows
+```{r}
+lapply(data, nrow)
+```
+
+
+# Data cleaning and EDA
+EDA checklist:
+
+- check for NAs
+
+- outliers, for all timepoints, both F1 and F2
+
+
+- relevel preceding segment
+
+- ~~no preceding nasal or approximant~~
+
+- relevel following segment
+
+- check frequent words
+
+Check for NAs first
+
+```{r}
+norm_formants <- c("normF1_20",
+                   "normF1_35",
+                   "normF1_50",
+                   "normF1_65",
+                   "normF1_80",
+                   "normF2_20",
+                   "normF2_35",
+                   "normF2_50",
+                   "normF2_65",
+                   "normF2_80",
+                   "norm_TL"
+                   )
+
+for(i in data){
+  print(
+  i %>% filter_at(vars(norm_formants), any_vars(is.na(.)))
+  )
+}
+```
+
+Get rid of the NA:
+```{r}
+data <- map(
+  data,
+  ~ filter_at(.x, vars(norm_formants), all_vars(!is.na(.)))
+)
+```
+Check whether this worked:
+```{r}
+lapply(data, nrow)
+```
+Names of items in "data" list:
+```{r}
+new_names <- names(data)
+```
+
+
+Check for outliers:
+```{r}
+#map(data,
+ #   ~ select(.x, vars(norm_formants)) %>% ggplot(aes())
+  #              )
+
+
+for(i in new_names){
+  for(col in norm_formants){
+ print(
+  ggplot(data[[i]], aes(get(col))) + 
+      geom_histogram(bins=100) + 
+    xlab(col)+ggtitle(paste(i)) +
+    geom_vline(xintercept = mean( data[[i]][[col]] ) - 3*sd(data[[i]][[col]])) +
+    geom_vline(xintercept = mean( data[[i]][[col]] ) + 3*sd(data[[i]][[col]]))
+  )
+    }}
+```
+We can see that there are glaring outliers in:
+- price_ad$normF2_35
+
+- price_ad$normF2_50
+
+- price_ad$normF2_65
+
+- price_ad$norm_TL
+
+```{r}
+data$face_ad <- data$face_ad %>% filter(
+  normF1_50 < 1.5,
+  normF1_65 > 0.5,
+  normF1_80 < 2,
+  normF2_65 > 0.8,
+  norm_TL < 1.5
+)
+
+data$goat_ad <- data$goat_ad %>% filter(
+  normF1_20 > 0.5,
+  normF1_20 < 2,
+  normF1_50 < 1.75,
+  normF1_65 < 2,
+  normF1_80 < 2,
+  norm_TL < 2
+)
+
+data$price_ad <- data$price_ad %>% filter(
+  normF1_20 < 2.2,
+  normF1_65 > 0.5,
+  normF1_65 < 2,
+  norm_TL < 2
+)
+
+data$like_ad <- data$like_ad %>% filter(
+  normF1_80 < 2,
+  norm_TL < 1.5
+)
+```
+
+```{r}
+lapply(data, nrow)
+```
+
+## relevel following segment
+
+```{r}
+map(data,
+    ~ group_by(.x, syl.type) %>% summarise(counts = n()))
+
+#table(data$price$syl.type)
+```
+```{r}
+
+map(data,
+    ~ filter(.x,
+             syl.type=="either") %>% group_by(word) %>% summarise(unicorn=n()) %>% arrange(desc(unicorn))
+)
+
+#data$price %>% filter(syl.type=="either") %>% group_by(word) %>% summarise(unicorn=n()) %>% arrange(desc(unicorn))
+```
+We will have to deal with these separately for each vowel, because the "either" class generally contains words that contain more than one of the target vowels.
+
+First FACE:
+```{r}
+data$face_ad <- data$face_ad %>% mutate(
+  syl.type2 = ifelse(
+    syl.type=="closed", "closed",
+    ifelse(
+      syl.type=="coda.nasal", "coda.nasal",
+      ifelse(
+        syl.type=="final.open", "final.open",
+        ifelse(syl.type=="medial.open", "medial.open",
+               ifelse(syl.type=="either" & word== "OKAY", "final.open",
+                      ifelse(syl.type=="either" & word=="DAYLIGHT", "medial.open", "other")
+                      )
+               )
+        )
+      )
+  )
+)
+```
+
+Then PRICE:
+```{r}
+data$price_ad <- data$price_ad %>% mutate(
+  syl.type2 = ifelse(
+    syl.type=="closed", "closed",
+    ifelse(
+      syl.type=="coda.nasal", "coda.nasal",
+      ifelse(
+        syl.type=="final.open", "final.open",
+        ifelse(syl.type=="medial.open", "medial.open",
+               ifelse(syl.type=="either" & word=="DAYLIGHT", "closed",
+                      ifelse(
+                        syl.type=="either" & word %in% c("MICROPHONE", "NICELY"), "medial.open",
+                        ifelse(syl.type=="either" & word=="NOTIFY", "final.open", "other")
+                        )
+                      )))
+      )
+    )
+  )
+```
+
+Now GOAT:
+```{r}
+data$goat_ad <- data$goat_ad %>% mutate(
+  syl.type2 = ifelse(
+    syl.type=="closed", "closed",
+    ifelse(
+      syl.type=="coda.nasal", "coda.nasal",
+      ifelse(
+        syl.type=="final.open", "final.open",
+        ifelse(syl.type=="medial.open", "medial.open",
+               ifelse(syl.type=="either" & word=="OKAY", "medial.open",
+                      ifelse(syl.type=="either" & word=="SOLO", "other",
+                             ifelse(syl.type=="either" & word=="MICROPHONE", "coda.nasal",
+                                    ifelse(syl.type=="either" & word %in% c("ASSOCIATE", "ASSOCIATES", "NOTIFY"), "medial.open", "other")
+                                           )
+                                    )
+                             )
+               )
+        )
+      )
+    )
+  )
+```
+
+Create list of the vowels for which preceding and following environment is relevant:
+```{r}
+data_vowels <- list(
+  "price_ad" = data$price_ad,
+  "face_ad" = data$face_ad,
+  "goat_ad" = data$goat_ad
+)
+```
+
+
+Check how this worked:
+```{r}
+map(data_vowels,
+    ~ group_by(.x, syl.type2) %>% summarise(counts = n()))
+```
+
+Get rid of the "others" in the GOAT set:
+```{r}
+data_vowels$goat_ad <- data_vowels$goat_ad %>% filter(!word =="SOLO")
+```
+
+
+Find out what the relevant coda segments are:
+```{r}
+map(data_vowels,
+    ~ filter(.x, syl.type2=="closed") %>% 
+      mutate(fol.phonOLOG.seg = factor(fol.phonOLOG.seg)) %>% 
+    group_by(fol.phonOLOG.seg) %>% summarise(counts=n())
+    )
+```
+
+summarise(counts = n())
+
+Define vectors according to voicing/manner:
+```{r}
+voiced <-  c("b", 
+             "d",  "dz", "dʒ",
+             "ðz",
+             "v", "vd","vz", 
+             "z", "zd")
+voiceless <- c("f", "fs",
+               "k", "ks", "kt",
+               "p", "ps", "pt",
+               "s", "st", "sts",
+               "t", "ts", "tʃ", "tʃt", "tθ",
+               "θ")
+nasal <- c("n", "nd")
+
+other <- c("0", "?", "l")
+```
+
+Create the variable:
+```{r}
+data_vowels <- map(data_vowels,
+                   ~ mutate(.x,
+                     following = ifelse(
+    syl.type2 =="coda.nasal", "coda.nasal",
+    ifelse(
+      syl.type2=="final.open", "final.open",
+      ifelse(
+        syl.type2=="medial.open", "medial.open",
+        ifelse(
+          syl.type2=="closed" & fol.phonOLOG.seg %in% voiced,
+          "voiced",
+          ifelse(
+            syl.type2=="closed" & fol.phonOLOG.seg %in% voiceless,
+            "voiceless",
+            ifelse(
+              syl.type2=="closed" & fol.phonOLOG.seg %in% nasal, "coda.nasal", "other"
+            )
+          )
+        )
+      )
+    )
+  )
+                   ))
+```
+
+Check the output
+```{r}
+map(data_vowels,
+    ~ group_by(.x, following) %>% summarise(counts=n())
+    )
+```
+Filter out "other":
+
+```{r}
+data_vowels <- map(data_vowels,
+                   ~ filter(.x,
+                            following!="other"))
+#data$price <- data$price %>% filter(following!="other")
+```
+Check that this worked:
+```{r}
+map(data_vowels,
+    ~ group_by(.x, following) %>% summarise(counts=n())
+    )
+```
+And "other" is gone. Good.
+## Relevel preceding segment
+```{r}
+map(data_vowels,
+    ~ group_by(.x, prec.seg) %>% summarise(counts=n())
+    )
+```
+
+I'll probably put other, vowel and zero together.
+
+
+## Check frequent words
+Check which words are most frequent
+```{r}
+map(data_vowels,
+    ~ group_by(.x, word) %>% summarise(counts=n()) %>% arrange(desc(counts))
+    )
+```
+Leaving all these as they are for now, even though there are some extremely frequent function words within each vowel dataframe ("MY", "THEY", "DON'T" etc)
+
+## Create list of cleaned vowel dataframes:
+```{r}
+data_new <- list(
+  "face_ad" = data_vowels$face_ad,
+  "price_ad" = data_vowels$price_ad,
+  "goat_ad" = data_vowels$goat_ad,
+  "like_ad" = data$like_ad
+)
+```
+
+
+## Log-transform duration
+
+Check distribution:
+```{r}
+map(data_new,
+    ~ggplot(.x,
+            aes(x=duration))+geom_histogram(bins=100))
+#ggplot(data$price, aes(x=duration))+geom_histogram(bins=100)+theme_minimal()
+#ggplot(data$like, aes(x=duration))+geom_histogram(bins=100)+theme_minimal()
+```
+
+Taking the natural log, cos that's what other studies do and say is standard.
+```{r}
+data_new <- map(data_new,
+    ~ mutate(.x,
+  LogDur = log(duration)
+))
+```
+
+Check that it worked:
+```{r}
+map(data_new,
+    ~ggplot(.x,
+            aes(x=LogDur))+geom_histogram(bins=100))
+```
+A bit skewed. Cut out outliers -- I don't think we want any log(duration)s > -1:
+```{r}
+data_new <- map(data_new,
+                ~ filter(.x,
+                         LogDur < -1))
+```
+
+
+## Relevel task
+```{r}
+map(data_new,
+    ~group_by(.x, task) %>% summarise(counts=n()))
+
+#table(data$price$task)
+#table(data$like$task)
+```
+Lump reading and wordlist together:
+```{r}
+# Make task a factor
+data_new <- map(data_new,
+    ~ mutate(.x,
+      task = as.factor(task)
+    ))
+
+# Check current levels of task
+lapply(data_new, function(x){levels(x$task)})
+
+# Relevel. Slightly long-winded because levels() assignment doesn't work inside lapply() for some reason
+data_new <- map(data_new,
+                ~ mutate(.x,
+                         task = ifelse(task=="interview", "interview",
+                                       ifelse(task=="reading", "reading",
+                                              ifelse(task == "wordlist", "reading", "other"))))
+                )
+
+# Unfortunately we now have to make it into a factor again
+data_new <- map(data_new,
+    ~ mutate(.x,
+      task = as.factor(task)
+    ))
+
+# Check that this worked
+lapply(data_new, function(x){levels(x$task)})
+```
+Great.
+## sum-code factors
+
+The factors are: task, sex, CofP, outcode, following seg, prec.seg
+
+Set task reference to interview.
+```{r}
+data_new <- map(data_new,
+            ~mutate(.x,
+                    task = relevel(task, ref="interview")
+                    ))
+
+#table(data$price$task)
+#table(data$like$task)
+```
+
+In fact, make all of the other social factors factors:
+```{r}
+data_new <- map(data_new,
+    ~ mutate(.x,
+      sex = as.factor(sex),
+      CofP = as.factor(CofP),
+      outcode = as.factor(outcode)
+      #levels(task) <- c("interview", "read.speech", "read.speech")
+    ))
+```
+
+Sex:
+```{r}
+# Check existing contrasts
+map(data_new,
+    ~ contrasts(.x[["sex"]]))
+
+# Assign contrasts. Got this code here: https://stackoverflow.com/questions/45140783/how-to-transform-a-string-into-a-factor-and-sets-contrasts-using-dplyr-magrittr
+data_new <-  map(data_new,
+                 ~ mutate(.x,
+                          sex = factor(sex)) %>% 
+                   do({function(X) {
+                     contrasts(X$sex) <- contr.sum(2); return(X)}}(.))
+)
+
+
+
+# Check that this worked
+map(data_new,
+    ~ contrasts(.x[["sex"]]))
+```
+Same with CofP:
+```{r}
+# Check existing contrasts
+map(data_new,
+    ~ contrasts(.x[["CofP"]]))
+
+# Assign contrasts. Got this code here: https://stackoverflow.com/questions/45140783/how-to-transform-a-string-into-a-factor-and-sets-contrasts-using-dplyr-magrittr
+data_new <-  map(data_new,
+                 ~ mutate(.x,
+                          CofP = factor(CofP)) %>% 
+                   do({function(X) {
+                     contrasts(X$CofP) <- contr.sum(2); return(X)}}(.))
+)
+
+
+
+# Check that this worked
+map(data_new,
+    ~ contrasts(.x[["CofP"]]))
+```
+And outcode:
+```{r}
+# Check existing contrasts
+map(data_new,
+    ~ contrasts(.x[["outcode"]]))
+
+# Assign contrasts. Got this code here: https://stackoverflow.com/questions/45140783/how-to-transform-a-string-into-a-factor-and-sets-contrasts-using-dplyr-magrittr
+data_new <-  map(data_new,
+                 ~ mutate(.x,
+                          outcode = factor(outcode)) %>% 
+                   do({function(X) {
+                     contrasts(X$outcode) <- contr.sum(3); return(X)}}(.))
+)
+
+# Check that this worked
+map(data_new,
+    ~ contrasts(.x[["outcode"]]))
+```
+
+## Preceding and following environment
+Create list of dataframes for which this is relevant:
+```{r}
+data_new_no_like <- list(
+  "face_ad" = data_new$face_ad,
+  "price_ad" = data_new$price_ad,
+  "goat_ad" = data_new$goat_ad
+)
+```
+
+Check contrasts for preceding environment:
+```{r}
+# Check existing contrasts. Need to convert to factor first
+data_new_no_like <- map(data_new_no_like,
+    ~ mutate(.x,
+             prec.seg = as.factor(prec.seg)))
+
+map(data_new_no_like,
+    ~ contrasts(.x[["prec.seg"]]))
+```
+
+Check how many in each category:
+```{r}
+map(data_new_no_like,
+    ~ group_by(.x, prec.seg) %>% summarise(counts=n()))
+```
+Relevel in order to lump "other", "vowel" amd "zero" together:
+```{r}
+data_new_no_like <-  map(data_new_no_like,
+                 ~ do(.x, {function(X) {
+                     levels(X$prec.seg) <- c("approx.glide",
+                              "coronal",
+                              "labial",
+                              "nasal",
+                              "other",
+                              "velar",
+                              "other",
+                              "other" );
+                     return(X)}}(.))
+)
+
+# Check that this worked
+map(data_new_no_like,
+    ~ table(.x[["prec.seg"]]))
+```
+Great, looks like that worked. Now set the contrasts:
+```{r}
+# Check existing contrasts
+map(data_new_no_like,
+    ~ contrasts(.x[["prec.seg"]]))
+
+# Assign contrasts. Got this code here: https://stackoverflow.com/questions/45140783/how-to-transform-a-string-into-a-factor-and-sets-contrasts-using-dplyr-magrittr
+data_new_no_like <-  map(data_new_no_like,
+                 ~ mutate(.x,
+                          prec.seg = factor(prec.seg)) %>% 
+                   do({function(X) {
+                     contrasts(X$prec.seg) <- contr.sum(6); return(X)}}(.))
+)
+
+# Check that this worked
+map(data_new_no_like,
+    ~ contrasts(.x[["prec.seg"]]))
+```
+
+Find out the most frequent words in each preceding environment category
+```{r}
+precseg_levels <- levels(data_new_no_like$price_ad$prec.seg)
+```
+
+```{r}
+#length(precseg_levels)
+
+for(x in data_new_no_like){
+  for(i in precseg_levels){
+    print(x %>% filter(prec.seg==i) %>% 
+      group_by(prec.seg, word) %>% 
+      summarise(tokens = n()) %>% 
+      arrange(desc(tokens)))
+  }
+}
+```
+
+
+Now the same process for following environment:
+
+```{r}
+map(data_new_no_like,
+    ~ table(.x[["following"]]))
+```
+Set the contrasts:
+```{r}
+# Assign contrasts. Got this code here: https://stackoverflow.com/questions/45140783/how-to-transform-a-string-into-a-factor-and-sets-contrasts-using-dplyr-magrittr
+data_new_no_like <-  map(data_new_no_like,
+                 ~ mutate(.x,
+                          following = factor(following)) %>% 
+                   do({function(X) {
+                     contrasts(X$following) <- contr.sum(5); return(X)}}(.))
+)
+
+# Check that this worked
+map(data_new_no_like,
+    ~ contrasts(.x[["following"]]))
+```
+
+Find out the most frequent words in each following environment category
+```{r}
+following_levels <- levels(data_new_no_like$price_ad$following)
+```
+
+```{r}
+#length(precseg_levels)
+
+for(x in data_new_no_like){
+  for(i in following_levels){
+    print(x %>% filter(following==i) %>% 
+      group_by(following, word) %>% 
+      summarise(tokens = n()) %>% 
+      arrange(desc(tokens)))
+  }
+}
+```
+## Bind data for FACE, PRICE and GOAT back together with *like*
+```{r}
+data_new_new <- list(
+  "face_ad" = data_new_no_like$face_ad,
+  "price_ad" = data_new_no_like$price_ad,
+  "goat_ad" = data_new_no_like$goat_ad,
+  "like_ad" = data_new$like_ad
+)
+```
+
+# Modelling procedure
+
+## set priors
+
+
+```{r}
+my_priors <- c(
+  set_prior("normal(0, 3)", class = "Intercept"), # intercept
+  set_prior("normal(0, 3)", class = "b"), # beta
+  #set_prior("normal(0, 1)", class = "sd"), # st. dev. of random effects
+  #set_prior("normal(0, 1)", class = "sigma"), # sigma (overall error)
+  set_prior("lkj(2)", class = "cor") # random effects correlation matrix
+)
+#Defaults:
+#lkj(1) - cor
+#student_t(3, 0, 10) Intercept
+#student_t(3, 0, 10) sd
+# student_t(3, 0, 10) sigma
+
+# Different priors for *like* because it doesn't need a random effects correlation matrix
+```
+
+## Convert TL to log(TL) and check distribution
+
+Create log-transformed Trajectory Length variable:
+```{r}
+data_new_new <- map(data_new_new,
+                    ~ mutate(.x,
+                             LogTL = log(norm_TL)))
+```
+
+Check how this worked by plotting histograms:
+```{r}
+# Names of dataframes
+data_names <- names(data_new_new)
+vars_to_plot <- c("norm_TL", "LogTL")
+
+for(i in data_names){
+  for(v in vars_to_plot){
+ print(
+  ggplot(data_new_new[[i]], aes(get(v))) + 
+      geom_histogram(bins=100) + 
+    xlab(v)+ggtitle(paste(i)) +
+    geom_vline(xintercept = mean( data_new_new[[i]][[v]] ) - 3*sd(data_new_new[[i]][[v]])) +
+    geom_vline(xintercept = mean( data_new_new[[i]][[v]] ) + 3*sd(data_new_new[[i]][[v]]))
+  )
+    }}
+```
+Get rid of the GOAT outlier(s):
+```{r}
+nrow(data_new_new$goat_ad)
+data_new_new$goat_ad <- data_new_new$goat_ad %>% filter(LogTL > -3.1)
+nrow(data_new_new$goat_ad)
+```
+
+## z-score the continuous variables
+
+```{r}
+data_new_new <- map(data_new_new,
+            ~ mutate(.x,
+                     normF1_20z = scale(normF1_20, center = TRUE),
+              normF2_20z = scale(normF2_20, center = TRUE),
+              LogDurZ = scale(LogDur, center = TRUE),
+              LogTLz = scale(LogTL, center = TRUE),
+            ))
+```
+
+
+Plot these to check it worked:
+```{r}
+# Z-scored variables and their originals
+z_vars <- c("normF1_20",
+          "normF1_20z",
+          "normF2_20",
+          "normF2_20z",
+          "LogTL",
+          "LogTLz",
+          "LogDur",
+          "LogDurZ")
+
+# Names of dataframes
+data_names <- names(data_new_new)
+
+for(i in data_names){
+  for(v in z_vars){
+ print(
+  ggplot(data_new_new[[i]], aes(get(v))) + 
+      geom_histogram(bins=100) + 
+    xlab(v)+ggtitle(paste(i)) +
+    geom_vline(xintercept = mean( data_new_new[[i]][[v]] ) - 3*sd(data_new_new[[i]][[v]])) +
+    geom_vline(xintercept = mean( data_new_new[[i]][[v]] ) + 3*sd(data_new_new[[i]][[v]]))
+  )
+    }}
+```
+Looks good.
+
+## Run the models: onset F1 / F2
+Models with:
+
+- CofP
+
+- outcode
+
+- sex
+
+... to see which is the best predictor.
+
+### FACE
+```{r}
+set.seed(8)
+
+# CofP
+#face_ad_f1_m_CofP <- brm(normF1_20z ~ LogDurZ +   
+ #                      CofP*prec.seg +
+  #                         CofP*following +
+   #                      CofP*task +
+    #                   (1 + prec.seg + following + task| participant) + 
+     #                (1+ CofP|word), data = data_new_new$face_ad,
+      #               prior = my_priors,
+       #              control = list(adapt_delta = 0.99),
+        #             sample_prior=TRUE,
+         #   file="models/face_ad_f1_m_CofP")
+
+# outcode
+#face_ad_f1_m_outcode <- brm(normF1_20z ~ LogDurZ +   
+ #                      outcode*prec.seg +
+  #                         outcode*following +
+   #                      outcode*task +
+    #                   (1 + prec.seg + following + task| participant) + 
+     #                (1+ outcode|word), data = data_new_new$face_ad,
+      #               prior = my_priors,
+       #              control = list(adapt_delta = 0.99),
+        #             sample_prior=TRUE,
+         #   file="models/face_ad_f1_m_outcode")
+
+# Sex
+#face_ad_f1_m_sex <- brm(normF1_20z ~ LogDurZ +   
+ #                      sex*prec.seg +
+  #                         sex*following +
+   #                      sex*task +
+    #                   (1 + prec.seg + following + task| participant) + 
+     #                (1+ sex|word), data = data_new_new$face_ad,
+      #               prior = my_priors,
+       #              control = list(adapt_delta = 0.99),
+        #             sample_prior=TRUE,
+         #   file="models/face_ad_f1_m_sex")
+
+# None of the above
+#face_ad_f1_m_none <- brm(normF1_20z ~ LogDurZ +   
+ #                      prec.seg +
+  #                         following +
+   #                      task +
+    #                   (1 + prec.seg + following + task| participant) + 
+     #                (1|word), data = data_new_new$face_ad,
+      #               prior = my_priors,
+       #              control = list(adapt_delta = 0.99),
+        #             sample_prior=TRUE,
+         #   file="models/face_ad_f1_m_none")
+```
+
+### PRICE
+
+**This code has been commented out to stop me accidentally rerunning the models when I click "Run all / Run all chunks above"**
+```{r}
+set.seed(56)
+
+# CofP
+#price_ad_f2_m_CofP <- brm(normF2_20z ~ LogDurZ +   
+  #                     CofP*prec.seg +
+   #                        CofP*following +
+    #                     CofP*task +
+     #                  (1 + prec.seg + following + task| participant) + 
+      #               (1+ CofP|word), data = data$price,
+       #              prior = my_priors3,
+        #             control = list(adapt_delta = 0.99),
+         #            sample_prior=TRUE,
+          #  file="models/price_ad_f2_m_CofP")
+
+# outcode
+#price_ad_f2_m_outcode <- brm(normF2_20z ~ LogDurZ +   
+ #                      outcode*prec.seg +
+  #                         outcode*following +
+   #                      outcode*task +
+    #                   (1 + prec.seg + following + task| participant) + 
+     #                (1+ outcode|word), data = data$price,
+      #               prior = my_priors3,
+       #              control = list(adapt_delta = 0.99),
+        #             sample_prior=TRUE,
+         #   file="models/price_ad_f2_m_outcode")
+
+# Sex
+#price_ad_f2_m_sex <- brm(normF2_20z ~ LogDurZ +   
+ #                      sex*prec.seg +
+  #                         sex*following +
+   #                      sex*task +
+    #                   (1 + prec.seg + following + task| participant) + 
+     #                (1+ sex|word), data = data$price,
+      #               prior = my_priors3,
+       #              control = list(adapt_delta = 0.99),
+        #             sample_prior=TRUE,
+         #   file="models/price_ad_f2_m_sex")
+
+# None of the above
+#price_ad_f2_m_none <- brm(normF2_20z ~ LogDurZ +   
+ #                      prec.seg +
+  #                         following +
+   #                      task +
+    #                   (1 + prec.seg + following + task| participant) + 
+     #                (1|word), data = data_new_new$price_ad,
+      #               prior = my_priors,
+       #              control = list(adapt_delta = 0.99),
+        #             sample_prior=TRUE,
+         #   file="models/price_ad_f2_m_none")
+
+```
+### GOAT
+
+```{r}
+set.seed(21)
+
+# CofP
+#goat_ad_f2_m_CofP <- brm(normF2_20z ~ LogDurZ +   
+ #                      CofP*prec.seg +
+  #                        CofP*following +
+   #                      CofP*task +
+    #                   (1 + prec.seg + following + task| participant) + 
+     #                (1+ CofP|word), data = data_new_new$goat_ad,
+      #               prior = my_priors,
+       #              control = list(adapt_delta = 0.99),
+        #             sample_prior=TRUE,
+         #   file="models/goat_ad_f2_m_CofP")
+
+# outcode
+#goat_ad_f2_m_outcode <- brm(normF2_20z ~ LogDurZ +   
+ #                      outcode*prec.seg +
+  #                         outcode*following +
+   #                      outcode*task +
+    #                   (1 + prec.seg + following + task| participant) + 
+     #                (1+ outcode|word), data = data_new_new$goat_ad,
+      #               prior = my_priors,
+       #              control = list(adapt_delta = 0.99),
+        #            sample_prior=TRUE,
+         #   file="models/goat_ad_f2_m_outcode")
+
+# Sex
+#goat_ad_f2_m_sex <- brm(normF2_20z ~ LogDurZ +   
+ #                      sex*prec.seg +
+  #                         sex*following +
+   #                      sex*task +
+    #                   (1 + prec.seg + following + task| participant) + 
+     #                (1+ sex|word), data = data_new_new$goat_ad,
+      #               prior = my_priors,
+       #              control = list(adapt_delta = 0.99),
+        #             sample_prior=TRUE,
+         #   file="models/goat_ad_f2_m_sex")
+
+# None of the above
+#goat_ad_f2_m_none <- brm(normF2_20z ~ LogDurZ +   
+ #                      prec.seg +
+  #                         following +
+   #                      task +
+    #                   (1 + prec.seg + following + task| participant) + 
+     #                (1|word), data = data_new_new$goat_ad,
+      #               prior = my_priors,
+       #              control = list(adapt_delta = 0.99),
+        #             sample_prior=TRUE,
+         #   file="models/goat_ad_f2_m_none")
+
+```
+
+### *Like*
+
+Get rid of task for the *like* models:
+
+```{r}
+table(data_new_new$price_ad$task)
+```
+
+```{r}
+lapply(data, nrow)
+data$like <- data$like %>% filter(task=="interview")
+
+lapply(data, nrow)
+```
+
+Try "get prior"
+```{r}
+get_prior(normF2_20z ~ LogDurZ +   
+                         CofP +
+                       (1 | participant),
+                       data = data$like)
+```
+Set priors for "like":
+```{r}
+my_priors_like <- c(
+  set_prior("normal(0, 3)", class = "Intercept"), # intercept
+  set_prior("normal(0, 3)", class = "b") # beta
+  #set_prior("normal(0, 1)", class = "sd"), # st. dev. of random effects
+  #set_prior("normal(0, 1)", class = "sigma"), # sigma (overall error)
+  #set_prior("lkj(2)", class = "cor") # random effects correlation matrix
+)
+```
+
+**This code has been commented out to stop me accidentally rerunning the models when I click "Run all / Run all chunks above"**
+```{r}
+# CofP
+#like_ad_f2_m_CofP <- brm(normF2_20z ~ LogDurZ +   
+ #                        CofP +
+  #                     (1 | participant),
+   #                    data = data$like,
+    #                 prior = my_priors_like,
+     #                control = list(adapt_delta = 0.99),
+      #               sample_prior=TRUE,
+       #     file="models/like_ad_f2_m_CofP")
+
+# outcode
+#like_ad_f2_m_outcode <- brm(normF2_20z ~ LogDurZ +   
+ #                        outcode +
+  #                     (1| participant),
+   #                    data = data$like,
+    #                 prior = my_priors_like,
+     #                control = list(adapt_delta = 0.99),
+      #               sample_prior=TRUE,
+       #     file="models/like_ad_f2_m_outcode")
+
+# Sex
+#like_ad_f2_m_sex <- brm(normF2_20z ~ LogDurZ +   
+ #                        sex +
+  #                     (1| participant),
+   #                    data = data$like,
+    #                 prior = my_priors_like,
+     #                control = list(adapt_delta = 0.99),
+      #               sample_prior=TRUE,
+       #     file="models/like_ad_f2_m_sex")
+
+# No social factors
+#like_ad_f2_m_none <- brm(normF2_20z ~ LogDurZ +   
+ #                      (1| participant),
+  #                     data = data$like,
+   #                  prior = my_priors_like,
+    #                 control = list(adapt_delta = 0.99),
+     #                sample_prior=TRUE,
+      #      file="models/like_ad_f2_m_none")
+```
+
+
+
+
+## Run the models: Trajectory Length
+
+Check distribution of Trajectory Length
+```{r}
+map(data,
+    ~ ggplot(.x, aes(x=norm_TL))+geom_histogram(bins=100)
+    )
+#ggplot(data$price, aes(x=norm_TL))+geom_histogram(bins=100)
+#ggplot(data$like, aes(x=norm_TL))+geom_histogram(bins=100)
+```
+Log-transform the dependent variable:
+```{r}
+data <- map(data,
+            ~ mutate(.x,
+                     LogTL = log(norm_TL)))
+```
+
+Check the distribution of this new variable:
+```{r}
+map(data,
+    ~ ggplot(.x, aes(x=LogTL))+geom_histogram(bins=100)
+    )
+```
+Not totally normal but it will do.
+
+Vector of predictor variables:
+```{r}
+predictors <- c("CofP",
+                "outcode",
+                "sex",
+                "prec.seg",
+                "task",
+                "following")
+```
+Check that the contrasts for each variable are OK:
+```{r}
+map(data$price[,predictors], contrasts)
+map(data$like[,c("CofP",
+                "outcode",
+                "sex")], contrasts)
+```
+Great.
+
+Z-score the continuous variables:
+```{r}
+data <- map(data,
+            ~ mutate(.x,
+                     LogTLz = scale(LogTL, center = TRUE),
+    LogDurZ = scale(LogDur, center = TRUE)))
+```
+
+Check the distribution of each of these to see that it worked:
+```{r}
+vars <- c("norm_TL",
+          "LogTL",
+          "LogTLz",
+          "duration",
+          "LogDur", "LogDurZ")
+
+for(i in vars){
+  print(
+  ggplot(data$price, aes(x=get(i)))+geom_histogram(bins=100)+theme_minimal() + 
+    #geom_vline(xintercept=2) + 
+    #geom_vline(xintercept=-2) +
+    xlab(i)
+  )
+}
+
+for(i in vars){
+  print(
+  ggplot(data$like, aes(x=get(i)))+geom_histogram(bins=100)+theme_minimal() + 
+    #geom_vline(xintercept=2) + 
+    #geom_vline(xintercept=-2) +
+    xlab(i)
+  )
+}
+```
+
+```{r}
+table(data$price$participant,data$price$task)
+```
+
+
+Run the modelsfor PRICE Trajectory Length:
+**This code has been commented out to stop me accidentally rerunning the models when I click "Run all / Run all chunks above"**
+```{r}
+set.seed(48)
+
+# CofP
+#price_ad_tl_m_CofP <- brm(LogTLz ~ LogDurZ +   
+ #                      CofP*prec.seg +
+  #                         CofP*following +
+   #                      CofP*task +
+    #                   (1 + prec.seg + following + task| participant) + 
+     #                (1+ CofP|word), data = data$price,
+      #               prior = my_priors3,
+       #              control = list(adapt_delta = 0.99),
+        #             sample_prior=TRUE,
+         #   file="models/price_ad_tl_m_CofP")
+
+# outcode
+#price_ad_tl_m_outcode <- brm(LogTLz ~ LogDurZ +   
+ #                      outcode*prec.seg +
+  #                         outcode*following +
+   #                      outcode*task +
+    #                   (1 + prec.seg + following + task| participant) + 
+     #                (1+ outcode|word), data = data$price,
+      #               prior = my_priors3,
+       #              control = list(adapt_delta = 0.99),
+        #             sample_prior=TRUE,
+         #   file="models/price_ad_tl_m_outcode")
+
+# Sex
+#price_ad_tl_m_sex <- brm(LogTLz ~ LogDurZ +   
+ #                      sex*prec.seg +
+  #                         sex*following +
+   #                      sex*task +
+    #                   (1 + prec.seg + following + task| participant) + 
+     #                (1+ sex|word), data = data$price,
+      #               prior = my_priors3,
+       #              control = list(adapt_delta = 0.99),
+        #             sample_prior=TRUE,
+         #   file="models/price_ad_tl_m_sex")
+```
+
+And the models for *like*:
+**This code has been commented out to stop me accidentally rerunning the models when I click "Run all / Run all chunks above"**
+```{r}
+set.seed(16)
+# CofP
+
+#like_ad_tl_m_CofP <- brm(LogTLz ~ LogDurZ +   
+ #                        CofP +
+  #                     (1 | participant),
+   #                    data = data$like,
+    #                 prior = my_priors_like,
+     #                control = list(adapt_delta = 0.99),
+      #               sample_prior=TRUE,
+       #     file="models/like_ad_tl_m_CofP")
+
+# outcode
+#like_ad_tl_m_outcode <- brm(LogTLz ~ LogDurZ +   
+ #                        outcode +
+  #                     (1| participant),
+   #                    data = data$like,
+    #                 prior = my_priors_like,
+     #                control = list(adapt_delta = 0.99),
+      #               sample_prior=TRUE,
+       #     file="models/like_ad_tl_m_outcode")
+
+# Sex
+#like_ad_tl_m_sex <- brm(LogTLz ~ LogDurZ +   
+ #                        sex +
+  #                     (1| participant),
+   #                    data = data$like,
+    #                 prior = my_priors_like,
+     #                control = list(adapt_delta = 0.99),
+      #               sample_prior=TRUE,
+       #     file="models/like_ad_tl_m_sex")
+```
+### Load models
+```{r}
+model_names <- list.files(path="models")
+
+models <- list()
+
+for(i in 1:length(model_names)){
+  name = paste("models/", model_names[i], sep="")
+  print(name)
+  models[[model_names[i]]] <- read_rds(name)
+  
+}
+
+#file.names <- dir(path, pattern =".rds")
+
+#file.names
+```
+Check that this worked:
+```{r}
+typeof(models[[2]])
+```
+Give names to the brms models in the list?
+```{r}
+real_names <- list.files(path="models")
+
+real_names2 <- str_replace(real_names, "\\.rds$", "")
+
+names(models) <- real_names2
+```
+
+Check that this worked:
+```{r}
+names(models)
+```
+
+### PP check
+Create lists of models, one per dependent variable:
+```{r}
+#models_price_f2 <- list(models$price_ad_f2_m_CofP, models$price_ad_f2_m_outcode, models$price_ad_f2_m_sex)
+#models_like_f2 <- list(models$like_ad_f2_m_CofP, models$like_ad_f2_m_outcode,models$like_ad_f2_m_sex)
+#models_price_tl <- list(models$price_ad_tl_m_CofP, models$price_ad_tl_m_outcode, models$price_ad_tl_m_sex)
+#models_like_tl <- list(models$like_ad_tl_m_CofP, models$like_ad_tl_m_outcode,models$like_ad_tl_m_sex)
+#models_tl <- list(price_ad_tl_m_CofP, price_ad_tl_m_outcode, price_ad_tl_m_sex)
+
+models_goat_f2 <- list(
+  "goat_ad_f2_m_CofP" = goat_ad_f2_m_CofP,
+  "goat_ad_f2_m_outcode" = goat_ad_f2_m_outcode,
+  "goat_ad_f2_m_sex" = goat_ad_f2_m_sex,
+  "goat_ad_f2_m_none" = goat_ad_f2_m_none
+)
+```
+
+
+
+
+Print posterior check:
+```{r}
+lapply(models_goat_f2, pp_check, nsamples=100)
+#lapply(models_tl, pp_check, nsamples=100)
+```
+They all look like an OK fit. The TL models slightly less so.
+## Model selection
+
+### Select the F2 model
+```{r}
+#(price_f2_loos <- lapply(models_price_f2, loo))
+#(like_f2_loos <- lapply(models_like_f2, loo))
+lapply(models_goat_f2, loo)
+```
+
+With the PRICE models, the 3rd one -- i.e. the one with just sex -- fits best.
+
+With *like*, it's a tough call between all 3 models, but the one with CofP is marginally better.
+
+```{r}
+lapply(price_f2_loos, plot)
+```
+
+So the final F2 models are:
+models$price_ad_f2_m_sex
+models$like_ad_f2_m_CofP
+
+
+### Select the TL model
+```{r}
+lapply(models_price_tl, loo)
+lapply(models_like_tl, loo)
+```
+For PRICE, the one with sex is marginally better than the others.
+
+For *like*, it's a tough call between CofP and sex.
+
+### Create list of final models
+```{r}
+final_models <- list(price_ad_f2_m_sex= models$price_ad_f2_m_sex,
+                     price_ad_tl_m_sex = models$price_ad_tl_m_sex,
+                    like_ad_f2_m_CofP = models$like_ad_f2_m_CofP,
+                     like_ad_f2_m_sex = models$like_ad_f2_m_sex,
+                     like_ad_tl_m_CofP = models$like_ad_tl_m_CofP,
+                     like_ad_tl_m_sex = models$like_ad_tl_m_sex)
+```
+(Keeping both "CofP" and "sex" models in for *like* because it's not clear that either is better)
+
+## Model summaries
+```{r}
+lapply(final_models, parameters::model_parameters, ci=0.95, ci_method="hdi", effects="fixed")
+```
+For *like*, for F2, both sex and CofP seem to have a big effect (maybe there is another confounding variable that we just don't know about?), while for TL, neither seems to have a great effect.
+
+# Interval plots
+
+
+# Linguistic factors: preceding and following environment
+```{r}
+price_models <- list(models$price_ad_f2_m_sex,
+                     models$price_ad_tl_m_sex)
+```
+
+Plot effects of preceding environment on the dependent vars:
+```{r}
+map(price_models,
+    ~  emmeans(.x, ~ prec.seg) %>%
+  gather_emmeans_draws() %>%
+  ggplot(aes(x = reorder(prec.seg, .value, median), y = .value)) +
+  geom_eye(.width = c(.95)) +
+  stat_summary(aes(group = NA), fun.y = mean, geom = "line") +
+  #facet_grid(~ sex) +
+  theme_light() + 
+  scale_fill_manual(values = c("gray80", "skyblue")))
+```
+
+And interaction with sex:
+```{r}
+map(price_models,
+    ~  emmeans(.x, ~ prec.seg | sex) %>%
+  gather_emmeans_draws() %>%
+  ggplot(aes(x = reorder(prec.seg, .value, median), y = .value, fill=sex)) +
+  geom_eye(.width = c(.95)) +
+  stat_summary(aes(group = sex), fun.y = mean, geom = "line") +
+  facet_grid(~ sex) +
+  theme_light() + 
+  scale_fill_manual(values = c("gray80", "skyblue")))
+```
+Plot effects of following environment on the dependent vars:
+```{r}
+map(price_models,
+    ~  emmeans(.x, ~ following) %>%
+  gather_emmeans_draws() %>%
+  ggplot(aes(x = reorder(following, .value, median), y = .value)) +
+  geom_eye(.width = c(.95)) +
+  stat_summary(aes(group = NA), fun.y = mean, geom = "line") +
+  #facet_grid(~ sex) +
+  theme_light() + 
+  scale_fill_manual(values = c("gray80", "skyblue")))
+```
+And interaction with sex:
+```{r}
+map(price_models,
+    ~  emmeans(.x, ~ following | sex) %>%
+  gather_emmeans_draws() %>%
+  ggplot(aes(x = reorder(following, .value, median), y = .value, fill=sex)) +
+  geom_eye(.width = c(.95)) +
+  stat_summary(aes(group = sex), fun.y = mean, geom = "line") +
+  facet_grid(~ sex) +
+  theme_light() + 
+  scale_fill_manual(values = c("gray80", "skyblue")))
+```
