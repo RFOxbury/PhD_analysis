@@ -585,11 +585,11 @@ my_labels <- c("Intercept",
 ```
 
 
-```{r}
+```{r height=10}
 #mcmc_plot(face_ad_f1_m1, type="intervals",  pars = "^b", prob = 0.9, prob_outer=0.95)
 
-mcmc_plot(face_ad_f1_m1, type="intervals",  pars = "^b", prob = 0.9, prob_outer=0.95) +
-  scale_y_discrete(labels=my_labels) +
+mcmc_plot(face_ad_f1_m1, type="areas",  pars = "^b", prob = 0.95, prob_outer=0.95) +
+  scale_y_discrete(labels=my_labels) + ggtitle("FACE onset F1: model comparing CofPs") +
   theme(axis.text = element_text(size=rel(1)))
 
 #x <- as.matrix(face_ad_f1_m1, pars = "^b")  
@@ -1013,6 +1013,12 @@ hypothesis(face_ad_y_f1_m1, "(Intercept - (outcode1:following1 + outcode1:follow
 
 
 ### Sex, outcode and task
+
+
+```{r}
+emmip(face_ad_y_f1_m1, ~ task)
+```
+
 
 ```{r}
 face_ad_y_f1_m1 %>%
